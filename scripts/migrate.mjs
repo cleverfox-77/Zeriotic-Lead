@@ -54,6 +54,24 @@ const statements = [
   `create index if not exists lead_notes_place_id_idx   on lead_notes (place_id, created_at desc)`,
   `create index if not exists lead_notes_author_idx     on lead_notes (author)`,
   `create index if not exists lead_notes_created_at_idx on lead_notes (created_at desc)`,
+
+  // ── Social presence ─────────────────────────────────────────────────────────
+  // A business with an active Facebook page but no website is the strongest
+  // pitch signal we have: they already sell online and visibly need a real site.
+  `alter table leads add column if not exists facebook_url       text`,
+  `alter table leads add column if not exists instagram_url      text`,
+  `alter table leads add column if not exists socials_checked_at timestamptz`,
+  `create index if not exists leads_facebook_idx on leads (facebook_url) where facebook_url is not null`,
+
+  // ── Search API quota ────────────────────────────────────────────────────────
+  // Counts queries per provider per month so we can spend Brave's free 2,000
+  // first and fall over to Google Custom Search once it runs low.
+  `create table if not exists api_usage (
+     provider text not null,
+     month    text not null,
+     count    integer not null default 0,
+     primary key (provider, month)
+   )`,
 ];
 
 for (const s of statements) {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { api } from './api.js';
-import { C, input, btn, btnGhost, label, th, td, Badge, STATUS_META, STATUSES } from './ui.jsx';
+import { C, input, btn, btnGhost, label, th, td, Badge, SocialCell, STATUS_META, STATUSES } from './ui.jsx';
 
 function NotePanel({ lead, onChanged }) {
   const [notes, setNotes] = useState([]);
@@ -55,7 +55,8 @@ export default function LeadsView() {
   const [leads, setLeads]   = useState([]);
   const [busy, setBusy]     = useState(true);
   const [open, setOpen]     = useState(null);
-  const [f, setF]           = useState({ status: '', owner: '', confidence: '', q: '', minReviews: '', minRating: '' });
+  const [enrich, setEnrich] = useState(null);
+  const [f, setF]           = useState({ status: '', owner: '', confidence: '', q: '', minReviews: '', minRating: '', social: '' });
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -67,12 +68,32 @@ export default function LeadsView() {
 
   const owners = [...new Set(leads.map(l => l.delivered_to).filter(Boolean))];
 
+  // Backfill social pages for leads scanned before social lookup existed
+  // (or that were skipped). Batched: Brave's free tier is 1 query/second.
+  const unchecked = leads.filter(l => !l.socials_checked_at);
+  const findSocials = async () => {
+    const ids = unchecked.map(l => l.place_id);
+    setEnrich({ done: 0, total: ids.length });
+    try {
+      for (let i = 0; i < ids.length; i += 10) {
+        await api.socials(ids.slice(i, i + 10));
+        setEnrich({ done: Math.min(i + 10, ids.length), total: ids.length });
+      }
+      await load();
+      setEnrich(null);
+    } catch (e) {
+      setEnrich({ error: e.message });
+    }
+  };
+
   const exportXLSX = () => {
-    const H = ['Name','Address','Phone','Type','Rating','Reviews','Status','Confidence','Same-name domains','Owner','Delivered','Last note','Maps'];
+    const H = ['Name','Address','Phone','Type','Rating','Reviews','Status','Confidence','Hot (FB, no site)','Facebook','Instagram','Same-name domains','Owner','Delivered','Last note','Maps'];
     const rows = leads.map(l => [
       l.name, l.address, l.phone, l.type, l.rating ?? '', l.reviews,
       STATUS_META[l.status]?.label || l.status,
       l.confidence === 'high' ? 'TRUE LEAD' : 'VERIFY',
+      l.facebook_url && l.confidence === 'high' ? 'HOT' : '',
+      l.facebook_url || '', l.instagram_url || '',
       (l.found_domains || []).join(', ') || '—',
       l.delivered_to, new Date(l.delivered_at).toLocaleDateString(),
       l.last_note || '', l.maps_url,
@@ -127,8 +148,24 @@ export default function LeadsView() {
             <option value="4.5">4.5+</option>
           </select>
         </div>
+        <div style={{ width: 150 }}>
+          <label style={label}>Social</label>
+          <select style={input} value={f.social} onChange={e => set('social', e.target.value)}>
+            <option value="">Any</option>
+            <option value="hot">🔥 FB page, no site</option>
+            <option value="has">Has FB or IG</option>
+            <option value="none">No social found</option>
+            <option value="unchecked">Not checked yet</option>
+          </select>
+        </div>
         <button onClick={exportXLSX} disabled={!leads.length} style={btnGhost}>Export Excel</button>
+        {unchecked.length > 0 && (
+          <button onClick={findSocials} disabled={!!enrich} style={btnGhost}>
+            {enrich ? (enrich.error ? 'Failed' : `Checking ${enrich.done}/${enrich.total}…`) : `Find socials (${unchecked.length})`}
+          </button>
+        )}
       </div>
+      {enrich?.error && <div style={{ fontSize: 12, color: C.red, marginBottom: 10 }}>{enrich.error}</div>}
 
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700 }}>
@@ -136,7 +173,7 @@ export default function LeadsView() {
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr>{['Business', 'Phone', 'Rating', 'Status', 'Finding', 'Owner', 'Activity'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Business', 'Phone', 'Rating', 'Status', 'Finding', 'Social', 'Owner', 'Activity'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {leads.map(l => {
                 const isOpen = open === l.place_id;
@@ -154,6 +191,7 @@ export default function LeadsView() {
                         ? <Badge bg="#fffbeb" fg={C.amber}>Verify</Badge>
                         : <Badge bg="#ecfdf5" fg={C.green}>True lead</Badge>}
                     </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}><SocialCell lead={l} /></td>
                     <td style={{ ...td, fontSize: 12, whiteSpace: 'nowrap' }}>{l.delivered_to}</td>
                     <td style={{ ...td, fontSize: 12, color: C.sub, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.note_count > 0 ? `${l.note_count} · ${l.last_note || ''}` : '—'}
@@ -161,7 +199,7 @@ export default function LeadsView() {
                   </tr>,
                   isOpen && (
                     <tr key={l.place_id + '-x'}>
-                      <td colSpan={7} style={{ padding: 0, borderBottom: `1px solid ${C.border}` }}>
+                      <td colSpan={8} style={{ padding: 0, borderBottom: `1px solid ${C.border}` }}>
                         <NotePanel lead={l} onChanged={load} />
                       </td>
                     </tr>

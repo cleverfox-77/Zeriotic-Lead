@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from './api.js';
-import { C, input, btn, label, card, th, td, Badge } from './ui.jsx';
+import { C, input, btn, label, card, th, td, Badge, SocialCell } from './ui.jsx';
 
 // Mirrors api/_lib/leadgen.js. Multi-part suffixes (.com.bd) are the whole point:
 // most Bangladeshi businesses sit on .com.bd, which single-suffix guessing missed.
@@ -94,16 +94,44 @@ export default function ScanView() {
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState('');
   const [res, setRes]   = useState(null);
+  const [social, setSocial] = useState(null); // { done, total, error }
+
+  // Social lookup runs after the scan, in batches. Brave's free tier allows only
+  // 1 query/second, so doing this inline would blow the function time limit.
+  const enrichSocials = async leads => {
+    const ids = leads.map(l => l.place_id);
+    setSocial({ done: 0, total: ids.length });
+    for (let i = 0; i < ids.length; i += 10) {
+      const chunk = ids.slice(i, i + 10);
+      try {
+        const { results } = await api.socials(chunk);
+        setRes(prev => prev && {
+          ...prev,
+          leads: prev.leads.map(l => {
+            const hit = results.find(r => r.place_id === l.place_id);
+            return hit ? { ...l, facebook_url: hit.facebook_url, instagram_url: hit.instagram_url } : l;
+          }),
+        });
+        setSocial(s => ({ ...s, done: Math.min(i + chunk.length, ids.length) }));
+      } catch (e) {
+        setSocial(s => ({ ...s, error: e.message }));
+        return;
+      }
+    }
+    setSocial(s => s && { ...s, done: ids.length });
+  };
 
   const run = async () => {
-    setBusy(true); setErr(''); setRes(null);
+    setBusy(true); setErr(''); setRes(null); setSocial(null);
     try {
-      setRes(await api.scan({
+      const r = await api.scan({
         location: loc, query, radius, maxPages, tlds, dns,
         filters: { minReviews: Number(minReviews) || 0, minRating: Number(minRating) || 0, requirePhone, excludeClosed },
-      }));
-    } catch (e) { setErr(e.message); }
-    finally { setBusy(false); }
+      });
+      setRes(r);
+      setBusy(false);
+      if (r.leads.length) enrichSocials(r.leads);
+    } catch (e) { setErr(e.message); setBusy(false); }
   };
 
   const canRun = !busy && loc.trim();
@@ -254,12 +282,19 @@ export default function ScanView() {
                 </div>
               ) : (
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
-                  <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700 }}>
-                    {res.leads.length} new lead{res.leads.length === 1 ? '' : 's'} — saved to your team pipeline
+                  <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{res.leads.length} new lead{res.leads.length === 1 ? '' : 's'} — saved to your team pipeline</span>
+                    {social && (
+                      <span style={{ fontWeight: 400, color: social.error ? C.red : C.sub }}>
+                        {social.error ? `Social lookup: ${social.error}`
+                          : social.done < social.total ? `Checking social pages… ${social.done}/${social.total}`
+                          : 'Social lookup complete'}
+                      </span>
+                    )}
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead><tr>{['Business', 'Phone', 'Rating', 'Finding', ''].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                      <thead><tr>{['Business', 'Phone', 'Rating', 'Finding', 'Social', ''].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                       <tbody>
                         {res.leads.map(l => (
                           <tr key={l.place_id}>
@@ -274,6 +309,7 @@ export default function ScanView() {
                                 ? <Badge bg="#fffbeb" fg={C.amber}>Verify: {l.found_domains.slice(0, 2).join(', ')}</Badge>
                                 : <Badge bg="#ecfdf5" fg={C.green}>True lead</Badge>}
                             </td>
+                            <td style={{ ...td, whiteSpace: 'nowrap' }}><SocialCell lead={l} /></td>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>
                               <a href={l.maps_url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontSize: 12, marginRight: 8 }}>Maps</a>
                               <a href={l.g_search} target="_blank" rel="noopener noreferrer" style={{ color: C.blue, fontSize: 12 }}>Google</a>

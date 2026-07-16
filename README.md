@@ -83,5 +83,31 @@ npm run build    # production build
 | `/api/leads` | PATCH | Change a lead's status |
 | `/api/notes` | GET/POST | Read / append the activity trail |
 | `/api/report` | GET | Pipeline, per-employee and activity rollups |
+| `/api/socials` | POST | Find Facebook/Instagram pages for a batch of leads |
+| `/api/health` | GET | Which providers the server resolved + search quota left |
 | `/api/report-email` | POST | Email the report to `MANAGER_EMAIL` now |
 | `/api/cron/weekly-report` | GET | Weekly email (Vercel Cron, Mondays 04:00 UTC) |
+
+## Social lookup — the "HOT" signal
+
+A business with **an active Facebook page but no website** is the best lead there
+is: already selling online, visibly missing a real site. Those are tagged **HOT**
+and filterable in the pipeline.
+
+Detection uses a **web search API**, not Facebook directly — facebook.com returns
+HTTP 400 with a byte-identical body for real and fake pages when called from a
+datacenter IP, and instagram.com returns the same login wall for both. A direct
+check is a coin flip; a search API is not.
+
+Providers, in order:
+1. **Brave Search** — free tier: 2,000 queries/month, **1 query/second**.
+2. **Google Custom Search** — used automatically once Brave passes
+   `BRAVE_MONTHLY_LIMIT` (default 1900), or if Brave errors. 100/day free, then
+   $5/1,000 (~$0.30 per 60-lead scan).
+
+Usage is counted per provider per month in the `api_usage` table, so the switch
+survives restarts. `GET /api/health` shows remaining quota and the active provider.
+
+That 1 query/second Brave limit is why social lookup runs **after** the scan in
+batches rather than inline — 60 businesses inline would take 60s and exceed the
+function timeout.

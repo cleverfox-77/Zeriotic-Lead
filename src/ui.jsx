@@ -71,3 +71,28 @@ export function Badge({ children, bg = C.line, fg = C.text }) {
     </span>
   );
 }
+
+const socialLink = {
+  padding: '2px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+  textDecoration: 'none', border: `1px solid ${C.border}`, color: C.text,
+};
+
+/**
+ * A business with an active Facebook page but no website is the best lead there
+ * is: already selling online, visibly missing a real site. That combination gets
+ * a HOT badge — it's the pitch.
+ */
+export function SocialCell({ lead }) {
+  const fb = lead.facebook_url, ig = lead.instagram_url;
+  const hot = fb && lead.confidence === 'high';
+  if (!fb && !ig) {
+    return <span style={{ color: C.muted, fontSize: 11 }}>{lead.socials_checked_at ? 'none found' : '—'}</span>;
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+      {hot && <Badge bg={C.black} fg="#fff">HOT</Badge>}
+      {fb && <a href={fb} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={socialLink}>FB</a>}
+      {ig && <a href={ig} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={socialLink}>IG</a>}
+    </span>
+  );
+}

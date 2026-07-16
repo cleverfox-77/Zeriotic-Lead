@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
   // ── List leads, with filtering ────────────────────────────────────────────
   if (req.method === 'GET') {
-    const { status = '', owner = '', confidence = '', q = '', minRating = '', minReviews = '', limit = '500' } = req.query || {};
+    const { status = '', owner = '', confidence = '', q = '', minRating = '', minReviews = '', social = '', limit = '500' } = req.query || {};
     const where = [], params = [];
     const add = (clause, val) => { params.push(val); where.push(clause.replace('?', `$${params.length}`)); };
 
@@ -21,6 +21,12 @@ export default async function handler(req, res) {
     }
     if (minRating)  add('coalesce(l.rating,0) >= ?', Number(minRating));
     if (minReviews) add('coalesce(l.reviews,0) >= ?', Number(minReviews));
+
+    // 'hot' = has a Facebook page but no website of their own: the best pitch.
+    if (social === 'hot')       where.push(`(l.facebook_url is not null and l.confidence = 'high')`);
+    else if (social === 'has')  where.push(`(l.facebook_url is not null or l.instagram_url is not null)`);
+    else if (social === 'none') where.push(`(l.facebook_url is null and l.instagram_url is null)`);
+    else if (social === 'unchecked') where.push(`l.socials_checked_at is null`);
 
     params.push(Math.min(Number(limit) || 500, 2000));
     const rows = await sql.query(
