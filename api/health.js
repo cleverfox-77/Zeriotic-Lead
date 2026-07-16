@@ -39,18 +39,38 @@ export default async function handler(req, res) {
           : undefined,
       };
     } catch (err) {
-      // Turn Google's terse setup errors into the actual fix.
+      // Map Google's reason code (more reliable than its prose) to the real fix.
+      const d = err.details || {};
       let fix;
-      if (/does not have.*access|has not been used|is disabled|blocked/i.test(err.message)) {
-        fix = 'Enable "Custom Search API" at console.cloud.google.com/apis/library/customsearch.googleapis.com '
-            + 'for the project that owns this key — and if the key has API restrictions, add Custom Search API '
-            + 'to its allowed list.';
-      } else if (/API key not valid|invalid key/i.test(err.message)) {
-        fix = 'The search API key is not valid for Custom Search. Check GOOGLE_CSE_API_KEY in Vercel.';
-      } else if (/Invalid Value|invalid argument/i.test(err.message)) {
-        fix = 'The search engine ID (GOOGLE_CSE_ID) looks wrong. Copy it from programmablesearchengine.google.com.';
+      switch (d.reason) {
+        case 'accessNotConfigured':
+          fix = 'The Custom Search API is not enabled on the project that owns THIS key. Note the project '
+              + 'number in the raw message below — if it is not the project where you enabled the API, the '
+              + 'key belongs to a different project. Create the key in the same project, or enable the API on that one.';
+          break;
+        case 'forbidden':
+        case 'PERMISSION_DENIED':
+          fix = 'The key reached the API but was refused. Usually the key\'s API restrictions do not include '
+              + 'Custom Search API (Credentials → your key → API restrictions), or the change has not propagated '
+              + 'yet — Google says up to 5 minutes.';
+          break;
+        case 'keyInvalid':
+        case 'badRequest':
+          fix = 'The key or the search engine ID is not accepted. Check GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID in Vercel '
+              + '(no quotes, no trailing spaces), then redeploy.';
+          break;
+        case 'dailyLimitExceeded':
+        case 'rateLimitExceeded':
+          fix = 'Out of Custom Search quota (100/day free). Wait for the daily reset or enable billing.';
+          break;
+        default:
+          if (/does not have.*access|has not been used|is disabled|blocked/i.test(err.message)) {
+            fix = 'Enable "Custom Search API" for the project that owns this key, and make sure the key\'s API '
+                + 'restrictions allow it. If both look right, the key likely belongs to a different project than '
+                + 'the one where you enabled the API.';
+          }
       }
-      test = { query_name: name, error: err.message, fix };
+      test = { query_name: name, error: err.message, error_details: d, fix };
     }
   }
 

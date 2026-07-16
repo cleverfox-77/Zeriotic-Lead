@@ -72,7 +72,21 @@ async function googleSearch(q) {
     const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(CSE_KEY)}&cx=${encodeURIComponent(CSE_CX)}&num=10&q=${encodeURIComponent(q)}`;
     const r = await fetch(url, { signal: ctrl.signal });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(`Google CSE: ${j?.error?.message || `HTTP ${r.status}`}`);
+    if (!r.ok) {
+      // Google's `message` alone rarely distinguishes "API disabled" from "key
+      // restricted" from "wrong project". The reason code and raw message (which
+      // usually names the project number Google thinks the key belongs to) are
+      // what actually identify the problem, so carry them along.
+      const e = j?.error?.errors?.[0] || {};
+      const err = new Error(`Google CSE: ${j?.error?.message || `HTTP ${r.status}`}`);
+      err.details = {
+        http_status: r.status,
+        reason: e.reason || j?.error?.status,
+        domain: e.domain,
+        raw_message: j?.error?.message, // never includes the key; it's in the URL only
+      };
+      throw err;
+    }
     return (j.items || []).map(x => ({ url: x.link, title: x.title || '' }));
   } finally { clearTimeout(tid); }
 }

@@ -111,10 +111,24 @@ export default function HealthView() {
             {test.error ? (
               <div>
                 <div style={{ color: C.red, fontSize: 13 }}>{test.error}</div>
+                {test.error_details?.reason && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: C.sub }}>
+                    HTTP {test.error_details.http_status} · reason: <code style={{ background: C.line, padding: '1px 4px', borderRadius: 3 }}>{test.error_details.reason}</code>
+                    {test.error_details.domain ? ` · domain: ${test.error_details.domain}` : ''}
+                  </div>
+                )}
                 {test.fix && (
                   <div style={{ marginTop: 8, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, fontSize: 12 }}>
                     <strong>How to fix: </strong>{test.fix}
                   </div>
+                )}
+                {test.error_details?.raw_message && (
+                  <details style={{ marginTop: 8, fontSize: 11, color: C.sub }}>
+                    <summary style={{ cursor: 'pointer' }}>Raw error from Google (names the project number)</summary>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: '6px 0 0', fontSize: 11 }}>
+                      {test.error_details.raw_message}
+                    </pre>
+                  </details>
                 )}
               </div>
             ) : (
