@@ -32,7 +32,7 @@ export async function getUsage(provider, month = monthKey()) {
 }
 
 async function bumpUsage(provider, n, month = monthKey()) {
-  if (n <= 0) return;
+  if (!Number.isFinite(n) || n <= 0) return;
   await sql`
     insert into api_usage (provider, month, count) values (${provider}, ${month}, ${n})
     on conflict (provider, month) do update set count = api_usage.count + ${n}`;
@@ -109,7 +109,11 @@ export function extractSocials(results, name) {
  */
 export async function createSearcher() {
   const month = monthKey();
-  let braveCount = BRAVE_KEY ? await getUsage('brave', month) : Infinity;
+  // Keep this a real number even when Brave isn't configured: an Infinity here
+  // makes the flush arithmetic NaN and Postgres rejects the insert. Whether
+  // Brave is usable is decided by `braveEnabled`, not by a sentinel count.
+  const braveEnabled = !!BRAVE_KEY;
+  let braveCount = braveEnabled ? await getUsage('brave', month) : 0;
   const startBrave = braveCount;
   let googleUsed = 0;
   let lastBraveAt = 0;
@@ -118,16 +122,28 @@ export async function createSearcher() {
     status: providerStatus(),
     get braveUsedThisMonth() { return braveCount; },
 
-    async search(q) {
-      const canBrave  = !!BRAVE_KEY && braveCount < BRAVE_MONTHLY_LIMIT;
+    /**
+     * Finds a business's social pages.
+     *
+     * The query is provider-aware, because the two engines see different webs:
+     *  - Brave searches everything, so it needs the "facebook instagram" hint to
+     *    surface social pages instead of directories and news.
+     *  - The Google CSE is configured to search ONLY facebook.com + instagram.com
+     *    (see README), so the name and city are enough — adding those hint words
+     *    there would just filter out perfectly good pages whose text happens not
+     *    to contain them.
+     */
+    async searchSocials(name, city) {
+      const canBrave  = braveEnabled && braveCount < BRAVE_MONTHLY_LIMIT;
       const canGoogle = !!(CSE_KEY && CSE_CX);
+      const base = `"${name}"${city ? ' ' + city : ''}`;
 
       if (canBrave) {
         const wait = BRAVE_MIN_INTERVAL_MS - (Date.now() - lastBraveAt);
         if (wait > 0) await sleep(wait); // free tier: 1 query/sec
         lastBraveAt = Date.now();
         try {
-          const results = await braveSearch(q);
+          const results = await braveSearch(`${base} facebook instagram`);
           braveCount++;
           return { results, provider: 'brave' };
         } catch (err) {
@@ -137,13 +153,13 @@ export async function createSearcher() {
       }
 
       if (canGoogle) {
-        const results = await googleSearch(q);
+        const results = await googleSearch(base);
         googleUsed++;
         return { results, provider: 'google' };
       }
 
       throw new Error(
-        'No search provider configured. Set BRAVE_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID.',
+        'No search provider configured. Set GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID (or BRAVE_SEARCH_API_KEY).',
       );
     },
 

@@ -99,15 +99,48 @@ HTTP 400 with a byte-identical body for real and fake pages when called from a
 datacenter IP, and instagram.com returns the same login wall for both. A direct
 check is a coin flip; a search API is not.
 
-Providers, in order:
-1. **Brave Search** — free tier: 2,000 queries/month, **1 query/second**.
-2. **Google Custom Search** — used automatically once Brave passes
-   `BRAVE_MONTHLY_LIMIT` (default 1900), or if Brave errors. 100/day free, then
-   $5/1,000 (~$0.30 per 60-lead scan).
+### Setting up Google Custom Search (the default provider)
 
-Usage is counted per provider per month in the `api_usage` table, so the switch
-survives restarts. `GET /api/health` shows remaining quota and the active provider.
+1. Enable **Custom Search API** in Google Cloud → set `GOOGLE_CSE_API_KEY`.
+2. Create an engine at [programmablesearchengine.google.com](https://programmablesearchengine.google.com)
+   → copy the **Search engine ID** into `GOOGLE_CSE_ID`.
+3. Under **Sites to search**, add:
+   - `facebook.com`
+   - `instagram.com`
 
-That 1 query/second Brave limit is why social lookup runs **after** the scan in
-batches rather than inline — 60 businesses inline would take 60s and exceed the
-function timeout.
+**You do not need "Search the entire web."** That toggle is often unavailable,
+and it isn't wanted here: the app discards every result that isn't a Facebook or
+Instagram URL, so an engine restricted to those two sites returns *better* top-10
+results, not worse.
+
+> A CSE with **no sites** and entire-web off searches nothing and silently returns
+> zero results — which looks identical to "this business has no Facebook page".
+> Verify with the self-test below.
+
+Cost: 100 queries/day free, then $5/1,000 (~$0.30 per 60-lead scan).
+
+### Brave (optional)
+
+Set `BRAVE_SEARCH_API_KEY` to spend Brave's free 2,000/month before Google's
+quota. It's optional — Brave requires a payment method on file even for the $0
+tier, and the app works fine on Google alone.
+
+When set, Brave is used until this month's count passes `BRAVE_MONTHLY_LIMIT`
+(default 1900), then Google takes over automatically. It also falls over to
+Google immediately if Brave errors or rate-limits. Usage is counted per provider
+per month in the `api_usage` table, so the switch survives restarts.
+
+Brave's free tier allows **1 query/second** — that limit is why social lookup runs
+**after** the scan in batches rather than inline: 60 businesses inline would need
+60s and exceed the function timeout.
+
+### Verifying your setup
+
+```
+GET /api/health                      # what the server resolved + quota left
+GET /api/health?test=Daraz&city=Dhaka   # runs ONE real search, shows raw URLs
+```
+
+The `test` form costs one query and returns the raw result URLs, so a
+misconfigured engine shows up immediately instead of as a silent "no socials
+found" on every lead.

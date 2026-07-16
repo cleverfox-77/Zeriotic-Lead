@@ -1,6 +1,6 @@
 import { requireAuth } from './_lib/auth.js';
 import { sql } from './_lib/db.js';
-import { providerStatus, getUsage, BRAVE_MONTHLY_LIMIT } from './_lib/search.js';
+import { providerStatus, getUsage, createSearcher, extractSocials, BRAVE_MONTHLY_LIMIT } from './_lib/search.js';
 
 // Reports what the server actually resolved from its environment, so a
 // misnamed variable shows up as "not configured" instead of a confusing
@@ -16,7 +16,35 @@ export default async function handler(req, res) {
   let db = false;
   try { await sql`select 1`; db = true; } catch {}
 
+  // ?test=Some Business Name — runs ONE real search so you can confirm the
+  // search engine is actually configured to return Facebook/Instagram pages.
+  // Costs one query against your quota. Returns raw URLs so a misconfigured CSE
+  // (e.g. no sites added) shows up as an empty result rather than a silent
+  // "no socials found" on every lead.
+  let test;
+  if (req.query?.test) {
+    const name = String(req.query.test).slice(0, 100);
+    try {
+      const searcher = await createSearcher();
+      const { results, provider } = await searcher.searchSocials(name, String(req.query.city || ''));
+      await searcher.flush();
+      test = {
+        query_name: name,
+        provider,
+        raw_result_count: results.length,
+        raw_urls: results.slice(0, 10).map(r => r.url),
+        extracted: extractSocials(results, name),
+        hint: results.length === 0
+          ? 'Zero results. If using Google CSE, add facebook.com and instagram.com under "Sites to search".'
+          : undefined,
+      };
+    } catch (err) {
+      test = { query_name: name, error: err.message };
+    }
+  }
+
   return res.status(200).json({
+    ...(test ? { test } : {}),
     database: db,
     google_maps: !!process.env.GOOGLE_MAPS_API_KEY,
     email: {

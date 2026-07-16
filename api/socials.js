@@ -30,9 +30,8 @@ export default async function handler(req, res) {
     const results = [];
     for (const l of leads) {
       const where = (l.search_location || '').split(',')[0];
-      const q = `"${l.name}" ${where} facebook instagram`;
       try {
-        const { results: hits, provider } = await searcher.search(q);
+        const { results: hits, provider } = await searcher.searchSocials(l.name, where);
         const { facebook_url, instagram_url } = extractSocials(hits, l.name);
 
         await sql`
