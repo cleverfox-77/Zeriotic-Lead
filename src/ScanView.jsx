@@ -1,9 +1,81 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from './api.js';
 import { C, input, btn, label, card, th, td, Badge } from './ui.jsx';
 
-const ALL_TLDS     = ['.com','.net','.org','.in','.shop','.co','.io','.biz','.info','.online','.store','.uk','.us','.ca','.au'];
-const DEFAULT_TLDS = ['.com','.net','.in','.shop'];
+// Mirrors api/_lib/leadgen.js. Multi-part suffixes (.com.bd) are the whole point:
+// most Bangladeshi businesses sit on .com.bd, which single-suffix guessing missed.
+const TLD_GROUPS = {
+  Common:      ['.com', '.net', '.org', '.co', '.info', '.biz'],
+  Bangladesh:  ['.com.bd', '.net.bd', '.org.bd', '.bd'],
+  India:       ['.in', '.co.in', '.net.in', '.org.in'],
+  'New gTLD':  ['.xyz', '.online', '.site', '.store', '.shop', '.tech', '.space', '.website', '.digital', '.agency', '.studio', '.live', '.life', '.app', '.dev', '.me'],
+  Regional:    ['.co.uk', '.uk', '.com.au', '.com.pk', '.com.sg', '.com.my', '.ae', '.lk', '.np', '.us', '.ca'],
+};
+const DEFAULT_TLDS = ['.com.bd', '.com', '.net', '.org', '.xyz', '.bd'];
+
+/** Location box with Google-Maps-style suggestions (debounced; server-proxied). */
+function LocationInput({ value, onChange, disabled }) {
+  const [suggestions, setSug] = useState([]);
+  const [open, setOpen]       = useState(false);
+  const [hi, setHi]           = useState(-1);
+  const boxRef  = useRef(null);
+  const skipRef = useRef(false); // don't re-query the text we just injected
+
+  useEffect(() => {
+    if (skipRef.current) { skipRef.current = false; return; }
+    if (!value || value.trim().length < 3) { setSug([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const { suggestions } = await api.autocomplete(value.trim());
+        setSug(suggestions);
+        setOpen(suggestions.length > 0);
+        setHi(-1);
+      } catch { setSug([]); }
+    }, 350); // debounce: autocomplete is billed per request
+    return () => clearTimeout(t);
+  }, [value]);
+
+  useEffect(() => {
+    const away = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, []);
+
+  const pick = s => { skipRef.current = true; onChange(s.text); setOpen(false); setSug([]); };
+
+  const onKey = e => {
+    if (!open || !suggestions.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && hi >= 0) { e.preventDefault(); pick(suggestions[hi]); }
+    else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <input style={input} value={value} disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => suggestions.length && setOpen(true)}
+        onKeyDown={onKey}
+        placeholder="Start typing — e.g. Gulshan, Dhaka"
+        autoComplete="off" />
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4,
+          background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+          {suggestions.map((s, i) => (
+            <div key={s.text} onMouseDown={() => pick(s)} onMouseEnter={() => setHi(i)}
+              style={{ padding: '8px 10px', cursor: 'pointer', background: i === hi ? C.panel : C.bg,
+                borderBottom: i < suggestions.length - 1 ? `1px solid ${C.line}` : 'none' }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{s.main}</div>
+              {s.secondary && <div style={{ fontSize: 11, color: C.sub }}>{s.secondary}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ScanView() {
   const [loc, setLoc]         = useState('');
@@ -44,7 +116,7 @@ export default function ScanView() {
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>New scan</div>
 
         <label style={label}>Target location</label>
-        <input style={input} value={loc} onChange={e => setLoc(e.target.value)} placeholder="Dhaka, Bangladesh" disabled={busy} />
+        <LocationInput value={loc} onChange={setLoc} disabled={busy} />
 
         <div style={{ height: 12 }} />
         <label style={label}>Business type</label>
@@ -100,20 +172,34 @@ export default function ScanView() {
 
         {/* ── Domain check ── */}
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>Domain check</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {ALL_TLDS.map(t => {
-              const on = tlds.includes(t);
-              return (
-                <button key={t} onClick={() => !busy && setTlds(p => on ? p.filter(x => x !== t) : [...p, t])}
-                  style={{ padding: '3px 9px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: on ? 600 : 400,
-                    background: on ? C.black : C.bg, color: on ? '#fff' : C.sub,
-                    border: `1px solid ${on ? C.black : C.border}` }}>
-                  {t}
-                </button>
-              );
-            })}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>Domain check</div>
+            <div style={{ fontSize: 10, color: C.muted }}>{tlds.length} selected</div>
           </div>
+
+          {Object.entries(TLD_GROUPS).map(([group, list]) => (
+            <div key={group} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{group}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {list.map(t => {
+                  const on = tlds.includes(t);
+                  return (
+                    <button key={t} onClick={() => !busy && setTlds(p => on ? p.filter(x => x !== t) : [...p, t])}
+                      style={{ padding: '3px 8px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: on ? 600 : 400,
+                        background: on ? C.black : C.bg, color: on ? '#fff' : C.sub,
+                        border: `1px solid ${on ? C.black : C.border}` }}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {tlds.length > 14 && (
+            <div style={{ fontSize: 10, color: C.amber, marginTop: 2 }}>
+              Many suffixes selected — scans will be slower and cost more DNS lookups.
+            </div>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, cursor: 'pointer' }}>
             <input type="checkbox" checked={dns} onChange={e => setDns(e.target.checked)} disabled={busy} style={{ accentColor: C.black }} />
             Run DNS domain lookup

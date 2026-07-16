@@ -34,6 +34,8 @@ async function req(path, { method = 'GET', body, params } = {}) {
 export const api = {
   login:     (name, password) => req('/api/login', { method: 'POST', body: { name, password } }),
   scan:      payload          => req('/api/scan',  { method: 'POST', body: payload }),
+  autocomplete: input         => req('/api/places-autocomplete', { params: { input } }),
+  emailReport:  ()            => req('/api/report-email', { method: 'POST' }),
   leads:     params           => req('/api/leads', { params }),
   setStatus: (place_id, status, note) => req('/api/leads', { method: 'PATCH', body: { place_id, status, note } }),
   notes:     place_id         => req('/api/notes', { params: { place_id } }),

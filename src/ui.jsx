@@ -21,6 +21,8 @@ export const STATUS_META = {
   contacted:      { label: 'Contacted',      bg: '#eff6ff', fg: C.blue },
   callback:       { label: 'Callback',       bg: '#fffbeb', fg: C.amber },
   interested:     { label: 'Interested',     bg: '#ecfdf5', fg: C.green },
+  quoted:         { label: 'Quoted',         bg: '#eef2ff', fg: '#4338ca' },
+  unqualified:    { label: 'Unqualified',    bg: '#f5f5f4', fg: '#78716c' },
   not_interested: { label: 'Not interested', bg: '#fef2f2', fg: C.red },
   won:            { label: 'Won',            bg: '#dcfce7', fg: '#14532d' },
   lost:           { label: 'Lost',           bg: '#f3f4f6', fg: '#6b7280' },

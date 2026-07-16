@@ -1,7 +1,26 @@
 // Lead-scoring engine. Runs server-side so the Google key never reaches a browser.
 
-export const ALL_TLDS     = ['.com','.net','.org','.in','.shop','.co','.io','.biz','.info','.online','.store','.uk','.us','.ca','.au'];
-export const DEFAULT_TLDS = ['.com','.net','.in','.shop'];
+// Suffixes are plain strings appended to a base, so multi-part suffixes like
+// ".com.bd" work exactly like ".com" — that is what makes greenleaf.com.bd
+// (the standard Bangladeshi business domain) detectable at all.
+export const TLD_GROUPS = {
+  Common:       ['.com', '.net', '.org', '.co', '.info', '.biz'],
+  Bangladesh:   ['.com.bd', '.net.bd', '.org.bd', '.bd'],
+  India:        ['.in', '.co.in', '.net.in', '.org.in'],
+  'New gTLD':   ['.xyz', '.online', '.site', '.store', '.shop', '.tech', '.space', '.website', '.digital', '.agency', '.studio', '.live', '.life', '.app', '.dev', '.me'],
+  Regional:     ['.co.uk', '.uk', '.com.au', '.com.pk', '.com.sg', '.com.my', '.ae', '.lk', '.np', '.us', '.ca'],
+};
+
+export const ALL_TLDS = [...new Set(Object.values(TLD_GROUPS).flat())];
+
+// Tuned for the Bangladesh market: .com.bd first, plus the gTLDs local
+// businesses actually buy.
+export const DEFAULT_TLDS = ['.com.bd', '.com', '.net', '.org', '.xyz', '.bd'];
+
+// Hard ceiling on DNS lookups per business, so selecting every TLD can't
+// blow the serverless time budget.
+const MAX_CHECKS_PER_BUSINESS = 80;
+const DNS_CONCURRENCY = 50;
 
 export function stripName(raw) {
   return String(raw || '')
@@ -23,30 +42,28 @@ export function stripName(raw) {
 export function domainCandidates(name, tlds = DEFAULT_TLDS) {
   const w = stripName(name).split(' ').filter(Boolean);
   if (!w.length) return { strong: [], weak: [] };
-  const strong = new Set(), weak = new Set();
-  const addS = s => { if (s && s.length >= 5 && s.length <= 28) strong.add(s); };
-  const addW = s => { if (s && s.length >= 3 && s.length <= 28) weak.add(s); };
+
+  const strongBases = new Set(), weakBases = new Set();
+  const addS = s => { if (s && s.length >= 5 && s.length <= 30) strongBases.add(s); };
+  const addW = s => { if (s && s.length >= 3 && s.length <= 30) weakBases.add(s); };
 
   if (w.length === 1) {
     (w[0].length >= 6 ? addS : addW)(w[0]);
   } else {
+    // Highest-signal shapes only. Every extra base multiplies by the TLD count,
+    // so low-yield variants were dropped to buy room for more suffixes.
     addS(w.join(''));
     addS(w.join('-'));
     addS(w.slice(0, 2).join(''));
-    addS(w.slice(0, 2).join('-'));
     addS(w[0] + w[w.length - 1]);
-    if (w.length >= 3) {
-      addS(w.slice(0, 3).join(''));
-      addS(w[0] + '-' + w[w.length - 1]);
-    }
     addW(w[0]);
     addW(w.map(x => x[0]).join(''));
   }
 
   const build = set => [...set].flatMap(b => tlds.map(t => b + t));
-  const strongList = build(strong);
-  const strongSet  = new Set(strongList);
-  return { strong: strongList, weak: build(weak).filter(d => !strongSet.has(d)) };
+  const strong    = build(strongBases);
+  const strongSet = new Set(strong);
+  return { strong, weak: build(weakBases).filter(d => !strongSet.has(d)) };
 }
 
 export async function dnsCheck(domain) {
@@ -61,7 +78,7 @@ export async function dnsCheck(domain) {
   } catch { return false; }
 }
 
-/** Runs `fn` over `items` with bounded concurrency (keeps serverless well under timeout). */
+/** Runs `fn` over `items` with bounded concurrency. */
 export async function pool(items, limit, fn) {
   const out = new Array(items.length);
   let i = 0;
@@ -74,27 +91,42 @@ export async function pool(items, limit, fn) {
   return out;
 }
 
-/** Classifies one business: 'high' (true lead) or 'review' (same-name domain exists). */
-export async function classify(name, tlds, doDNS) {
-  const { strong, weak } = domainCandidates(name, tlds);
-  if (!doDNS) return { confidence: 'high', foundDomains: [], weakDomains: [], candidates: [...strong, ...weak].slice(0, 40) };
-
-  const toCheck   = [...strong, ...weak.slice(0, 8)];
-  const strongSet = new Set(strong);
-  const results   = await pool(toCheck, 24, dnsCheck);
-
-  const foundDomains = [], weakDomains = [];
-  results.forEach((ok, k) => {
-    if (!ok) return;
-    (strongSet.has(toCheck[k]) ? foundDomains : weakDomains).push(toCheck[k]);
+/**
+ * Classifies every business in one pass.
+ *
+ * All DNS lookups across all businesses go through a single global pool, rather
+ * than a per-business pool run serially. Same number of lookups, a fraction of
+ * the wall time, and concurrency stays bounded no matter how many businesses or
+ * TLDs are in play.
+ *
+ * Returns one result per input, aligned by index.
+ */
+export async function classifyMany(names, tlds = DEFAULT_TLDS, doDNS = true) {
+  const per = names.map(n => {
+    const { strong, weak } = domainCandidates(n, tlds);
+    const toCheck = [...strong, ...weak.slice(0, 8)].slice(0, MAX_CHECKS_PER_BUSINESS);
+    return { strong: new Set(strong), toCheck };
   });
 
-  return {
-    confidence: foundDomains.length ? 'review' : 'high',
-    foundDomains,
-    weakDomains,
-    candidates: toCheck.slice(0, 40),
-  };
+  if (!doDNS) {
+    return per.map(p => ({ confidence: 'high', foundDomains: [], weakDomains: [], checked: 0 }));
+  }
+
+  // Flatten every (business, domain) pair into one work queue.
+  const tasks = [];
+  per.forEach((p, i) => p.toCheck.forEach(d => tasks.push({ i, d })));
+
+  const hits = await pool(tasks, DNS_CONCURRENCY, t => dnsCheck(t.d));
+
+  const out = per.map(p => ({ confidence: 'high', foundDomains: [], weakDomains: [], checked: p.toCheck.length }));
+  hits.forEach((ok, k) => {
+    if (!ok) return;
+    const { i, d } = tasks[k];
+    (per[i].strong.has(d) ? out[i].foundDomains : out[i].weakDomains).push(d);
+  });
+  out.forEach(o => { if (o.foundDomains.length) o.confidence = 'review'; });
+
+  return out;
 }
 
 export async function geocode(addr, key) {

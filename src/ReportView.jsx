@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
 import { api } from './api.js';
-import { C, th, td, card, Badge, STATUS_META } from './ui.jsx';
+import { C, th, td, card, btn, Badge, STATUS_META } from './ui.jsx';
 
 export default function ReportView() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
+  const [mail, setMail] = useState({ busy: false, msg: '', ok: false });
 
   useEffect(() => { api.report().then(setD).catch(e => setErr(e.message)); }, []);
+
+  const emailIt = async () => {
+    setMail({ busy: true, msg: '', ok: false });
+    try {
+      const { sentTo } = await api.emailReport();
+      setMail({ busy: false, msg: `Report emailed to ${sentTo}`, ok: true });
+    } catch (e) {
+      setMail({ busy: false, msg: e.message, ok: false });
+    }
+  };
 
   if (err) return <div style={{ color: C.red, fontSize: 13 }}>{err}</div>;
   if (!d)  return <div style={{ color: C.sub, fontSize: 13 }}>Loading report…</div>;
@@ -16,14 +27,26 @@ export default function ReportView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+      {/* Email to manager */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={emailIt} disabled={mail.busy} style={btn(mail.busy)}>
+          {mail.busy ? 'Sending…' : 'Email report to manager'}
+        </button>
+        <span style={{ fontSize: 12, color: C.muted }}>A weekly copy also sends automatically every Monday.</span>
+        {mail.msg && (
+          <span style={{ fontSize: 12, color: mail.ok ? C.green : C.red, marginLeft: 'auto' }}>{mail.msg}</span>
+        )}
+      </div>
+
       {/* Headline numbers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
         {[
-          { l: 'Total leads',  v: d.totals.total_leads },
-          { l: 'True leads',   v: d.totals.true_leads },
-          { l: 'Worked',       v: `${d.totals.worked_pct}%` },
-          { l: 'Won',          v: d.totals.won },
-          { l: 'Conversion',   v: `${d.totals.conversion}%` },
+          { l: 'Total leads',   v: d.totals.total_leads },
+          { l: 'New this week', v: d.totals.new_this_week },
+          { l: 'True leads',    v: d.totals.true_leads },
+          { l: 'Worked',        v: `${d.totals.worked_pct}%` },
+          { l: 'Won',           v: d.totals.won },
+          { l: 'Conversion',    v: `${d.totals.conversion}%` },
         ].map(({ l, v }) => (
           <div key={l} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 12px', textAlign: 'center' }}>
             <div style={{ fontSize: 26, fontWeight: 700 }}>{v}</div>
@@ -73,7 +96,7 @@ export default function ReportView() {
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700 }}>By employee</div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr>{['Employee', 'Leads', 'Untouched', 'Contacted', 'Interested', 'Won', 'Lost', 'Win rate'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Employee', 'Leads', 'Untouched', 'Contacted', 'Interested', 'Unqualified', 'Won', 'Lost', 'Win rate'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {d.byEmployee.map(e => (
               <tr key={e.employee}>
@@ -82,6 +105,7 @@ export default function ReportView() {
                 <td style={{ ...td, color: e.untouched > 0 ? C.amber : C.sub }}>{e.untouched}</td>
                 <td style={td}>{e.contacted}</td>
                 <td style={td}>{e.interested}</td>
+                <td style={{ ...td, color: C.sub }}>{e.unqualified}</td>
                 <td style={{ ...td, fontWeight: 600 }}>{e.won}</td>
                 <td style={td}>{e.lost}</td>
                 <td style={td}>{e.total ? `${((e.won / e.total) * 100).toFixed(0)}%` : '0%'}</td>

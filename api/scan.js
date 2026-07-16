@@ -1,6 +1,6 @@
 import { requireAuth } from './_lib/auth.js';
 import { sql } from './_lib/db.js';
-import { classify, geocode, placesSearch, DEFAULT_TLDS } from './_lib/leadgen.js';
+import { classifyMany, geocode, placesSearch, DEFAULT_TLDS } from './_lib/leadgen.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -64,12 +64,15 @@ export default async function handler(req, res) {
     const fresh = quality.filter(p => !seen.has(p.id));
     const alreadyDelivered = quality.length - fresh.length;
 
-    // 6. Classify the survivors (DNS domain check).
-    const leads = [];
-    for (const p of fresh) {
-      const name = p.displayName?.text || 'Unknown';
-      const c = await classify(name, tlds, dns);
-      leads.push({
+    // 6. Classify the survivors. One call: every DNS lookup for every business
+    //    runs through a single bounded pool instead of business-by-business.
+    const names   = fresh.map(p => p.displayName?.text || 'Unknown');
+    const results = await classifyMany(names, tlds, dns);
+
+    const leads = fresh.map((p, i) => {
+      const name = names[i];
+      const c    = results[i];
+      return {
         place_id: p.id,
         name,
         address: p.formattedAddress || '',
@@ -84,8 +87,8 @@ export default async function handler(req, res) {
         weak_domains:  c.weakDomains,
         status: 'new',
         delivered_to: session.name,
-      });
-    }
+      };
+    });
 
     // 7. Record them as delivered so nobody on the team ever gets them again.
     //    ON CONFLICT guards against two employees scanning at the same moment.
