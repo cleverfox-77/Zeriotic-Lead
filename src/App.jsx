@@ -5,11 +5,13 @@ import Login from './Login.jsx';
 import ScanView from './ScanView.jsx';
 import LeadsView from './LeadsView.jsx';
 import ReportView from './ReportView.jsx';
+import HealthView from './HealthView.jsx';
 
 const TABS = [
   { id: 'scan',   label: 'Find leads' },
   { id: 'leads',  label: 'Pipeline' },
   { id: 'report', label: 'Reports' },
+  { id: 'health', label: 'Setup' },
 ];
 
 export default function App() {
@@ -51,6 +53,7 @@ export default function App() {
         {tab === 'scan'   && <ScanView />}
         {tab === 'leads'  && <LeadsView />}
         {tab === 'report' && <ReportView />}
+        {tab === 'health' && <HealthView />}
       </div>
     </div>
   );
