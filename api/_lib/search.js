@@ -6,9 +6,16 @@ import { stripName } from './leadgen.js';
 const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY
                || process.env.BRAVE_SEARCH_KEY    || process.env.BRAVE_KEY;
 
-const CSE_KEY   = process.env.GOOGLE_CSE_API_KEY  || process.env.GOOGLE_SEARCH_API_KEY
-               || process.env.GOOGLE_CSE_KEY      || process.env.GOOGLE_CUSTOM_SEARCH_KEY
-               || process.env.GOOGLE_MAPS_API_KEY; // same key works if Custom Search API is enabled on it
+// Falls back to the Maps key, which works ONLY if that key's project has Custom
+// Search API enabled AND the key's API restrictions allow it. Reported by
+// /api/health as `cse_key_source` so a silent fallback isn't mistaken for real
+// configuration.
+const CSE_KEY_SOURCE = ['GOOGLE_CSE_API_KEY', 'GOOGLE_SEARCH_API_KEY', 'GOOGLE_CSE_KEY',
+                        'GOOGLE_CUSTOM_SEARCH_KEY', 'GOOGLE_MAPS_API_KEY']
+                        .find(n => process.env[n]) || null;
+const CSE_KEY = CSE_KEY_SOURCE ? process.env[CSE_KEY_SOURCE] : undefined;
+
+export const cseKeySource = () => CSE_KEY_SOURCE;
 
 const CSE_CX    = process.env.GOOGLE_CSE_ID       || process.env.GOOGLE_CSE_CX
                || process.env.GOOGLE_SEARCH_ENGINE_ID || process.env.GOOGLE_CX;

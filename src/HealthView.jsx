@@ -50,6 +50,12 @@ export default function HealthView() {
         <Dot ok={h.database}>Database (Neon)</Dot>
         <Dot ok={h.google_maps}>Google Maps key (scanning)</Dot>
         <Dot ok={s.google_configured}>Google Custom Search (social lookup)</Dot>
+        {s.cse_key_source === 'GOOGLE_MAPS_API_KEY' && (
+          <div style={{ fontSize: 11, color: C.amber, margin: '-2px 0 4px 16px' }}>
+            Using your Maps key for search — no dedicated key was set. It needs Custom Search API
+            enabled on its project <em>and</em> allowed under the key's API restrictions.
+          </div>
+        )}
         <Dot ok={s.brave_configured}>Brave Search (optional)</Dot>
         <Dot ok={h.email.smtp}>SMTP (email reports)</Dot>
         <Dot ok={h.email.manager}>Manager email address</Dot>
@@ -103,7 +109,14 @@ export default function HealthView() {
         {test && (
           <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
             {test.error ? (
-              <div style={{ color: C.red, fontSize: 13 }}>{test.error}</div>
+              <div>
+                <div style={{ color: C.red, fontSize: 13 }}>{test.error}</div>
+                {test.fix && (
+                  <div style={{ marginTop: 8, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, fontSize: 12 }}>
+                    <strong>How to fix: </strong>{test.fix}
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <div style={{ fontSize: 12, marginBottom: 8 }}>

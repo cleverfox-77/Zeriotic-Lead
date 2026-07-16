@@ -1,6 +1,6 @@
 import { requireAuth } from './_lib/auth.js';
 import { sql } from './_lib/db.js';
-import { providerStatus, getUsage, createSearcher, extractSocials, BRAVE_MONTHLY_LIMIT } from './_lib/search.js';
+import { providerStatus, getUsage, createSearcher, extractSocials, cseKeySource, BRAVE_MONTHLY_LIMIT } from './_lib/search.js';
 
 // Reports what the server actually resolved from its environment, so a
 // misnamed variable shows up as "not configured" instead of a confusing
@@ -39,7 +39,18 @@ export default async function handler(req, res) {
           : undefined,
       };
     } catch (err) {
-      test = { query_name: name, error: err.message };
+      // Turn Google's terse setup errors into the actual fix.
+      let fix;
+      if (/does not have.*access|has not been used|is disabled|blocked/i.test(err.message)) {
+        fix = 'Enable "Custom Search API" at console.cloud.google.com/apis/library/customsearch.googleapis.com '
+            + 'for the project that owns this key — and if the key has API restrictions, add Custom Search API '
+            + 'to its allowed list.';
+      } else if (/API key not valid|invalid key/i.test(err.message)) {
+        fix = 'The search API key is not valid for Custom Search. Check GOOGLE_CSE_API_KEY in Vercel.';
+      } else if (/Invalid Value|invalid argument/i.test(err.message)) {
+        fix = 'The search engine ID (GOOGLE_CSE_ID) looks wrong. Copy it from programmablesearchengine.google.com.';
+      }
+      test = { query_name: name, error: err.message, fix };
     }
   }
 
@@ -55,6 +66,11 @@ export default async function handler(req, res) {
     search: {
       brave_configured:  providers.brave,
       google_configured: providers.google,
+      // Which env var the CSE key actually came from. If this says
+      // GOOGLE_MAPS_API_KEY, no dedicated search key was set and the Maps key is
+      // being reused — it needs Custom Search API enabled *and* allowed by the
+      // key's API restrictions.
+      cse_key_source: cseKeySource(),
       brave_used_this_month:  brave,
       brave_limit:            BRAVE_MONTHLY_LIMIT,
       brave_remaining:        Math.max(0, BRAVE_MONTHLY_LIMIT - brave),
