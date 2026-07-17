@@ -261,7 +261,7 @@ export default function ScanView() {
                   { l: 'Low quality',    v: res.stats.failedQuality },
                   { l: 'Already given',  v: res.stats.alreadyDelivered },
                   { l: 'To verify',      v: res.stats.toVerify },
-                  { l: 'New leads',      v: res.stats.trueLeads, hi: true },
+                  { l: 'True leads',     v: res.stats.trueLeads, hi: true },
                 ].map(({ l, v, hi }) => (
                   <div key={l} style={{ border: `1px solid ${hi ? C.black : C.border}`, borderRadius: 8, padding: '12px 10px', textAlign: 'center' }}>
                     <div style={{ fontSize: 24, fontWeight: 700, color: C.text }}>{v}</div>
