@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { api } from './api.js';
 import { C, th, td, card, btn, Badge, STATUS_META } from './ui.jsx';
+import { useIsMobile } from './useIsMobile.js';
 
 export default function ReportView() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [mail, setMail] = useState({ busy: false, msg: '', ok: false });
+  const isMobile = useIsMobile();
 
   useEffect(() => { api.report().then(setD).catch(e => setErr(e.message)); }, []);
 
@@ -28,18 +30,18 @@ export default function ReportView() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* Email to manager */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button onClick={emailIt} disabled={mail.busy} style={btn(mail.busy)}>
+      <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', gap: 10, flexDirection: isMobile ? 'column' : 'row' }}>
+        <button onClick={emailIt} disabled={mail.busy} style={{ ...btn(mail.busy), padding: isMobile ? '12px 16px' : undefined }}>
           {mail.busy ? 'Sending…' : 'Email report to manager'}
         </button>
         <span style={{ fontSize: 12, color: C.muted }}>A weekly copy also sends automatically every Monday.</span>
         {mail.msg && (
-          <span style={{ fontSize: 12, color: mail.ok ? C.green : C.red, marginLeft: 'auto' }}>{mail.msg}</span>
+          <span style={{ fontSize: 12, color: mail.ok ? C.green : C.red, marginLeft: isMobile ? 0 : 'auto' }}>{mail.msg}</span>
         )}
       </div>
 
       {/* Headline numbers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3,1fr)' : 'repeat(6,1fr)', gap: isMobile ? 6 : 10 }}>
         {[
           { l: 'Total leads',   v: d.totals.total_leads },
           { l: 'New this week', v: d.totals.new_this_week },
@@ -48,14 +50,14 @@ export default function ReportView() {
           { l: 'Won',           v: d.totals.won },
           { l: 'Conversion',    v: `${d.totals.conversion}%` },
         ].map(({ l, v }) => (
-          <div key={l} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 12px', textAlign: 'center' }}>
-            <div style={{ fontSize: 26, fontWeight: 700 }}>{v}</div>
+          <div key={l} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: isMobile ? '12px 4px' : '14px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: isMobile ? 20 : 26, fontWeight: 700 }}>{v}</div>
             <div style={{ fontSize: 10, color: C.sub, marginTop: 4, fontWeight: 600 }}>{l}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
         {/* Pipeline */}
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Pipeline</div>
@@ -95,7 +97,8 @@ export default function ReportView() {
       {/* Per-employee */}
       <div style={{ border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700 }}>By employee</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="scroll-x">
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 620 : 'auto' }}>
           <thead><tr>{['Employee', 'Leads', 'Untouched', 'Contacted', 'Interested', 'Unqualified', 'Won', 'Lost', 'Win rate'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
             {d.byEmployee.map(e => (
@@ -113,6 +116,7 @@ export default function ReportView() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Activity */}

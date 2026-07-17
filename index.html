@@ -2,11 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- maximum-scale/user-scalable lock the pinch zoom. iOS Safari ignores
+         those for accessibility, so the input font-size rule below is what
+         actually stops the focus auto-zoom there. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Business Website Lead Agent</title>
     <style>
-      html, body { margin: 0; background: #ffffff; }
+      html, body {
+        margin: 0;
+        background: #ffffff;
+        -webkit-text-size-adjust: 100%; /* stop iOS inflating text in landscape */
+        overflow-x: hidden;             /* nothing should scroll the page sideways */
+      }
       * { box-sizing: border-box; }
+
+      /* Kills the double-tap-to-zoom delay and gesture on every control. */
+      button, a, input, select, textarea, label { touch-action: manipulation; }
+
+      /* iOS zooms the viewport when you focus a field smaller than 16px. The UI
+         is designed at 13px, so bump fields to 16px on small screens only —
+         this is the fix for the auto-zoom, not the viewport meta above. */
+      @media (max-width: 760px) {
+        input, select, textarea { font-size: 16px !important; }
+      }
+
+      /* Wide tables scroll inside their own container, never the page. */
+      .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+      /* Tap targets: phone numbers are the point of this app on mobile. */
+      a[href^="tel:"] { text-decoration: none; }
     </style>
   </head>
   <body>

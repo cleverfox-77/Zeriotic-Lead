@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from './api.js';
 import { C, input, btn, btnGhost, label, card, Badge } from './ui.jsx';
+import { useIsMobile } from './useIsMobile.js';
 
 const Dot = ({ ok, children }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 13 }}>
@@ -19,6 +20,7 @@ export default function HealthView() {
   const [city, setCity] = useState('Dhaka');
   const [test, setTest] = useState(null);
   const [busy, setBusy] = useState(false);
+  const isMobile = useIsMobile();
 
   const load = () => api.health().then(setH).catch(e => setErr(e.message));
   useEffect(() => { load(); }, []);
@@ -39,7 +41,7 @@ export default function HealthView() {
   const s = h.search;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, alignItems: 'start' }}>
 
       {/* What the server can see */}
       <div style={card}>
@@ -105,16 +107,17 @@ export default function HealthView() {
           Runs one real search (costs one query) and shows exactly what came back. If a business you
           know has a Facebook page returns nothing, your search engine is misconfigured — not the lead.
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          <div style={{ width: 220 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: isMobile ? '1 1 100%' : '0 0 220px' }}>
             <label style={label}>Business name</label>
             <input style={input} value={name} onChange={e => setName(e.target.value)} />
           </div>
-          <div style={{ width: 160 }}>
+          <div style={{ flex: isMobile ? '1 1 60%' : '0 0 160px' }}>
             <label style={label}>City</label>
             <input style={input} value={city} onChange={e => setCity(e.target.value)} />
           </div>
-          <button onClick={runTest} disabled={busy || !name.trim()} style={btn(busy || !name.trim())}>
+          <button onClick={runTest} disabled={busy || !name.trim()}
+            style={{ ...btn(busy || !name.trim()), flex: isMobile ? '1 1 30%' : undefined, padding: isMobile ? '12px 10px' : undefined }}>
             {busy ? 'Searching…' : 'Run test'}
           </button>
         </div>

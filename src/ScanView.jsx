@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from './api.js';
-import { C, input, btn, label, card, th, td, Badge, SocialCell } from './ui.jsx';
+import { C, input, btn, label, card, th, td, Badge, SocialCell, Phone } from './ui.jsx';
+import { useIsMobile } from './useIsMobile.js';
 
 // Mirrors api/_lib/leadgen.js. Multi-part suffixes (.com.bd) are the whole point:
 // most Bangladeshi businesses sit on .com.bd, which single-suffix guessing missed.
@@ -95,6 +96,7 @@ export default function ScanView() {
   const [err, setErr]   = useState('');
   const [res, setRes]   = useState(null);
   const [social, setSocial] = useState(null); // { done, total, error }
+  const isMobile = useIsMobile();
 
   // Social lookup runs after the scan, in batches. Brave's free tier allows only
   // 1 query/second, so doing this inline would blow the function time limit.
@@ -137,7 +139,13 @@ export default function ScanView() {
   const canRun = !busy && loc.trim();
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: res || busy ? '320px 1fr' : '460px', gap: 16, justifyContent: res || busy ? 'stretch' : 'center', alignItems: 'start' }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: isMobile ? '1fr' : (res || busy ? '320px 1fr' : '460px'),
+      gap: 16,
+      justifyContent: isMobile || res || busy ? 'stretch' : 'center',
+      alignItems: 'start',
+    }}>
 
       {/* ── Config ── */}
       <div style={card}>
@@ -160,7 +168,7 @@ export default function ScanView() {
         <div style={{ display: 'flex', gap: 6 }}>
           {[1, 2, 3].map(n => (
             <button key={n} onClick={() => !busy && setPages(n)}
-              style={{ flex: 1, padding: '6px 0', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              style={{ flex: 1, padding: isMobile ? '11px 0' : '6px 0', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
                 background: maxPages === n ? C.black : C.bg,
                 color:      maxPages === n ? '#fff'  : C.text,
                 border: `1px solid ${maxPages === n ? C.black : C.border}` }}>
@@ -213,7 +221,7 @@ export default function ScanView() {
                   const on = tlds.includes(t);
                   return (
                     <button key={t} onClick={() => !busy && setTlds(p => on ? p.filter(x => x !== t) : [...p, t])}
-                      style={{ padding: '3px 8px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: on ? 600 : 400,
+                      style={{ padding: isMobile ? '7px 12px' : '3px 8px', borderRadius: 20, cursor: 'pointer', fontSize: 11, fontWeight: on ? 600 : 400,
                         background: on ? C.black : C.bg, color: on ? '#fff' : C.sub,
                         border: `1px solid ${on ? C.black : C.border}` }}>
                       {t}
@@ -235,7 +243,7 @@ export default function ScanView() {
         </div>
 
         <div style={{ height: 16 }} />
-        <button onClick={run} disabled={!canRun} style={{ ...btn(!canRun), width: '100%' }}>
+        <button onClick={run} disabled={!canRun} style={{ ...btn(!canRun), width: '100%', padding: isMobile ? '13px 16px' : '9px 16px' }}>
           {busy ? 'Scanning…' : 'Run agent'}
         </button>
         {err && <div style={{ marginTop: 10, fontSize: 12, color: C.red }}>{err}</div>}
@@ -254,7 +262,7 @@ export default function ScanView() {
             <>
               <div style={{ fontSize: 12, color: C.sub }}>Area resolved: <strong style={{ color: C.text }}>{res.area}</strong></div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3,1fr)' : 'repeat(6,1fr)', gap: isMobile ? 6 : 10 }}>
                 {[
                   { l: 'Scanned',        v: res.stats.scanned },
                   { l: 'Has website',    v: res.stats.hasWebsite },
@@ -263,8 +271,8 @@ export default function ScanView() {
                   { l: 'To verify',      v: res.stats.toVerify },
                   { l: 'True leads',     v: res.stats.trueLeads, hi: true },
                 ].map(({ l, v, hi }) => (
-                  <div key={l} style={{ border: `1px solid ${hi ? C.black : C.border}`, borderRadius: 8, padding: '12px 10px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 24, fontWeight: 700, color: C.text }}>{v}</div>
+                  <div key={l} style={{ border: `1px solid ${hi ? C.black : C.border}`, borderRadius: 8, padding: isMobile ? '10px 4px' : '12px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 700, color: C.text }}>{v}</div>
                     <div style={{ fontSize: 10, color: C.sub, marginTop: 3, fontWeight: 600 }}>{l}</div>
                   </div>
                 ))}
@@ -292,8 +300,8 @@ export default function ScanView() {
                       </span>
                     )}
                   </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <div className="scroll-x">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 640 : 'auto' }}>
                       <thead><tr>{['Business', 'Phone', 'Rating', 'Finding', 'Social', ''].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                       <tbody>
                         {res.leads.map(l => (
@@ -302,7 +310,7 @@ export default function ScanView() {
                               <div style={{ fontWeight: 600 }}>{l.name}</div>
                               <div style={{ fontSize: 11, color: C.sub }}>{l.address}</div>
                             </td>
-                            <td style={{ ...td, whiteSpace: 'nowrap' }}>{l.phone || '—'}</td>
+                            <td style={{ ...td, whiteSpace: 'nowrap' }}><Phone number={l.phone} /></td>
                             <td style={{ ...td, whiteSpace: 'nowrap' }}>{l.rating ? `${l.rating} (${l.reviews})` : '—'}</td>
                             <td style={td}>
                               {l.confidence === 'review'

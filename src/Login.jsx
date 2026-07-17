@@ -21,7 +21,7 @@ export default function Login({ onDone }) {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: font, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <form onSubmit={submit} style={{ width: 340, border: `1px solid ${C.border}`, borderRadius: 10, padding: 24 }}>
+      <form onSubmit={submit} style={{ width: '100%', maxWidth: 340, border: `1px solid ${C.border}`, borderRadius: 10, padding: 24 }}>
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>Lead Agent</h1>
         <p style={{ margin: '4px 0 20px', fontSize: 12, color: C.sub }}>Sign in with your team password.</p>
 
@@ -35,7 +35,7 @@ export default function Login({ onDone }) {
         {err && <div style={{ marginTop: 12, fontSize: 12, color: C.red }}>{err}</div>}
 
         <div style={{ height: 18 }} />
-        <button type="submit" disabled={busy || !name.trim() || !password} style={{ ...btn(busy || !name.trim() || !password), width: '100%' }}>
+        <button type="submit" disabled={busy || !name.trim() || !password} style={{ ...btn(busy || !name.trim() || !password), width: '100%', padding: '12px 16px' }}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>

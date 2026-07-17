@@ -77,6 +77,17 @@ const socialLink = {
   textDecoration: 'none', border: `1px solid ${C.border}`, color: C.text,
 };
 
+/** Phone number as a tap-to-call link — the main action on a phone. */
+export function Phone({ number }) {
+  if (!number) return <span style={{ color: C.muted }}>—</span>;
+  return (
+    <a href={`tel:${number.replace(/[^\d+]/g, '')}`} onClick={e => e.stopPropagation()}
+      style={{ color: C.blue, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {number}
+    </a>
+  );
+}
+
 /**
  * A business with an active Facebook page but no website is the best lead there
  * is: already selling online, visibly missing a real site. That combination gets
