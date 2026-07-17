@@ -49,17 +49,27 @@ export default function HealthView() {
         </div>
         <Dot ok={h.database}>Database (Neon)</Dot>
         <Dot ok={h.google_maps}>Google Maps key (scanning)</Dot>
-        <Dot ok={s.google_configured}>Google Custom Search (social lookup)</Dot>
-        {s.cse_key_source === 'GOOGLE_MAPS_API_KEY' && (
-          <div style={{ fontSize: 11, color: C.amber, margin: '-2px 0 4px 16px' }}>
-            Using your Maps key for search — no dedicated key was set. It needs Custom Search API
-            enabled on its project <em>and</em> allowed under the key's API restrictions.
-          </div>
-        )}
-        <Dot ok={s.brave_configured}>Brave Search (optional)</Dot>
+        <Dot ok={s.tavily_configured}>Tavily (social lookup — free tier)</Dot>
+        <Dot ok={s.serper_configured}>Serper (social lookup — paid overflow)</Dot>
         <Dot ok={h.email.smtp}>SMTP (email reports)</Dot>
         <Dot ok={h.email.manager}>Manager email address</Dot>
-        <Dot ok={h.email.cron}>Cron secret (weekly report)</Dot>
+
+        {h.security && (
+          <>
+            <Dot ok={h.security.session_secret.ok}>Session secret strength</Dot>
+            {!h.security.session_secret.ok && (
+              <div style={{ fontSize: 11, color: C.red, margin: '-2px 0 6px 16px' }}>
+                {h.security.session_secret.why}. Run <code style={{ background: C.line, padding: '1px 4px', borderRadius: 3 }}>
+                node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code> and paste the
+                <em> output</em> into Vercel, then redeploy.
+              </div>
+            )}
+            <Dot ok={h.security.cron_secret.ok}>Cron secret strength</Dot>
+            {!h.security.cron_secret.ok && (
+              <div style={{ fontSize: 11, color: C.red, margin: '-2px 0 6px 16px' }}>{h.security.cron_secret.why}.</div>
+            )}
+          </>
+        )}
         <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
           Anything red means the variable is missing or misnamed in Vercel. Redeploy after changing env vars.
         </div>
@@ -75,12 +85,15 @@ export default function HealthView() {
           </Badge>
         </div>
         <div style={{ fontSize: 13, padding: '6px 0' }}>
-          Brave used: <strong>{s.brave_used_this_month}</strong> / {s.brave_limit}
-          {s.brave_configured && <span style={{ color: C.sub }}> · {s.brave_remaining} left before switching to Google</span>}
+          Tavily used: <strong>{s.tavily_used_this_month}</strong> / {s.tavily_limit}
+          {s.tavily_configured && <span style={{ color: C.sub }}> · {s.tavily_remaining} free left this month, then Serper takes over</span>}
         </div>
         <div style={{ fontSize: 13, padding: '6px 0' }}>
-          Google Custom Search used: <strong>{s.google_used_this_month}</strong>
-          <span style={{ color: C.sub }}> · 100/day free, then $5 per 1,000</span>
+          Serper used: <strong>{s.serper_used_this_month}</strong>
+          <span style={{ color: C.sub }}> · 2,500 free credits, then ~$1 per 1,000</span>
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+          Tavily's free quota resets every month, so it is spent first. Roughly 60 searches per 60-lead scan.
         </div>
         <button onClick={load} style={{ ...btnGhost, marginTop: 10 }}>Refresh</button>
       </div>

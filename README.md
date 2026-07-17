@@ -48,6 +48,17 @@ Set these in **Vercel → Project → Settings → Environment Variables** (and 
 | `SMTP_FROM` | From address (defaults to `SMTP_USER`). |
 | `MANAGER_EMAIL` | Who receives reports. |
 | `CRON_SECRET` | Guards the weekly cron route so strangers can't trigger report emails. |
+| `TAVILY_API_KEY` | Social lookup, free tier (1,000/month, resets). |
+| `SERPER_API_KEY` | Social lookup, paid overflow (~$1/1,000). |
+
+> **Generate secrets, don't paste the command.** `SESSION_SECRET` and
+> `CRON_SECRET` must be the *output* of the command below, not the command
+> itself — that string is published in this repo and would let anyone forge a
+> login. The **Setup** tab flags this if it happens.
+>
+> ```bash
+> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+> ```
 
 > After adding or changing env vars in Vercel you must **redeploy** for them to take effect.
 
@@ -99,40 +110,30 @@ HTTP 400 with a byte-identical body for real and fake pages when called from a
 datacenter IP, and instagram.com returns the same login wall for both. A direct
 check is a coin flip; a search API is not.
 
-### Setting up Google Custom Search (the default provider)
+### Providers
 
-1. Enable **Custom Search API** in Google Cloud → set `GOOGLE_CSE_API_KEY`.
-2. Create an engine at [programmablesearchengine.google.com](https://programmablesearchengine.google.com)
-   → copy the **Search engine ID** into `GOOGLE_CSE_ID`.
-3. Under **Sites to search**, add:
-   - `facebook.com`
-   - `instagram.com`
+> **Do not use Google Custom Search or Brave.** The Custom Search JSON API is
+> closed to new Google Cloud projects — a new key returns `403 forbidden` no
+> matter how correctly the API, key restrictions and engine are configured, and
+> there is no way to fix it from the console. Brave retired its free tier in
+> early 2026 and now requires a card with metered billing. Both were evaluated
+> and dropped.
 
-**You do not need "Search the entire web."** That toggle is often unavailable,
-and it isn't wanted here: the app discards every result that isn't a Facebook or
-Instagram URL, so an engine restricted to those two sites returns *better* top-10
-results, not worse.
+1. **Tavily** — 1,000 free credits per month, **resets monthly**, no card.
+   Spent first. Sign up at [tavily.com](https://tavily.com) → `TAVILY_API_KEY`.
+2. **Serper** — 2,500 free credits, then ~$1 per 1,000 (~$0.06 per 60-lead scan).
+   Takes over automatically once Tavily's monthly quota is gone, or if Tavily
+   errors. Sign up at [serper.dev](https://serper.dev) → `SERPER_API_KEY`.
 
-> A CSE with **no sites** and entire-web off searches nothing and silently returns
-> zero results — which looks identical to "this business has no Facebook page".
-> Verify with the self-test below.
+Either works alone; both together gives free-first with cheap overflow. Both are
+told to restrict to `facebook.com`/`instagram.com` (Tavily via `include_domains`,
+Serper via Google `site:` operators), so no result filtering is wasted.
 
-Cost: 100 queries/day free, then $5/1,000 (~$0.30 per 60-lead scan).
+Usage is counted per provider per month in the `api_usage` table, so the switch
+survives restarts and cold starts.
 
-### Brave (optional)
-
-Set `BRAVE_SEARCH_API_KEY` to spend Brave's free 2,000/month before Google's
-quota. It's optional — Brave requires a payment method on file even for the $0
-tier, and the app works fine on Google alone.
-
-When set, Brave is used until this month's count passes `BRAVE_MONTHLY_LIMIT`
-(default 1900), then Google takes over automatically. It also falls over to
-Google immediately if Brave errors or rate-limits. Usage is counted per provider
-per month in the `api_usage` table, so the switch survives restarts.
-
-Brave's free tier allows **1 query/second** — that limit is why social lookup runs
-**after** the scan in batches rather than inline: 60 businesses inline would need
-60s and exceed the function timeout.
+Social lookup runs **after** the scan in batches rather than inline, so a scan of
+60 businesses can't exceed the function timeout, and employees see progress.
 
 ### Verifying your setup
 

@@ -1,36 +1,28 @@
 import { sql } from './db.js';
 import { stripName } from './leadgen.js';
 
-// Env names vary, so accept the common spellings rather than failing silently
-// on a near-miss. /api/health reports what the server actually resolved.
-const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY
-               || process.env.BRAVE_SEARCH_KEY    || process.env.BRAVE_KEY;
+// ─────────────────────────────────────────────────────────────────────────────
+// Why these two providers:
+//   Google Custom Search JSON API is CLOSED to new Cloud projects (any new key
+//   gets 403 forbidden no matter how it's configured), and Brave retired its
+//   free tier in early 2026. Both were dead ends. Tavily still has a recurring
+//   free monthly quota; Serper is the cheapest paid overflow.
+// ─────────────────────────────────────────────────────────────────────────────
+const TAVILY_KEY = process.env.TAVILY_API_KEY || process.env.TAVILY_KEY;
+const SERPER_KEY = process.env.SERPER_API_KEY || process.env.SERPER_KEY;
 
-// Falls back to the Maps key, which works ONLY if that key's project has Custom
-// Search API enabled AND the key's API restrictions allow it. Reported by
-// /api/health as `cse_key_source` so a silent fallback isn't mistaken for real
-// configuration.
-const CSE_KEY_SOURCE = ['GOOGLE_CSE_API_KEY', 'GOOGLE_SEARCH_API_KEY', 'GOOGLE_CSE_KEY',
-                        'GOOGLE_CUSTOM_SEARCH_KEY', 'GOOGLE_MAPS_API_KEY']
-                        .find(n => process.env[n]) || null;
-const CSE_KEY = CSE_KEY_SOURCE ? process.env[CSE_KEY_SOURCE] : undefined;
+// Tavily's free tier is 1,000 credits per month and it RESETS monthly, so we
+// spend it first and only fall through to paid Serper once it's gone.
+export const TAVILY_MONTHLY_LIMIT = Number(process.env.TAVILY_MONTHLY_LIMIT || 1000);
 
-export const cseKeySource = () => CSE_KEY_SOURCE;
-
-const CSE_CX    = process.env.GOOGLE_CSE_ID       || process.env.GOOGLE_CSE_CX
-               || process.env.GOOGLE_SEARCH_ENGINE_ID || process.env.GOOGLE_CX;
-
-// Switch to Google before Brave's free 2,000/month actually runs out.
-export const BRAVE_MONTHLY_LIMIT   = Number(process.env.BRAVE_MONTHLY_LIMIT || 1900);
-// Brave's free tier allows 1 query/second. This is the whole reason social
-// lookup is a separate batched step instead of running inline in a scan.
-const BRAVE_MIN_INTERVAL_MS = Number(process.env.BRAVE_MIN_INTERVAL_MS || 1100);
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
+// Only these two hosts matter — every other result is discarded, so we ask the
+// providers to restrict rather than filtering a page of noise afterwards.
+const SOCIAL_HOSTS = ['facebook.com', 'instagram.com'];
+
 export function providerStatus() {
-  return { brave: !!BRAVE_KEY, google: !!(CSE_KEY && CSE_CX) };
+  return { tavily: !!TAVILY_KEY, serper: !!SERPER_KEY };
 }
 
 export async function getUsage(provider, month = monthKey()) {
@@ -45,49 +37,48 @@ async function bumpUsage(provider, n, month = monthKey()) {
     on conflict (provider, month) do update set count = api_usage.count + ${n}`;
 }
 
-async function braveSearch(q) {
+function detailedError(prefix, status, body) {
+  const msg = body?.error?.message || body?.message || body?.detail || body?.error || `HTTP ${status}`;
+  const err = new Error(`${prefix}: ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
+  err.details = { http_status: status, reason: body?.error?.type || body?.code, raw_message: typeof msg === 'string' ? msg : undefined };
+  return err;
+}
+
+async function tavilySearch(q) {
   const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), 9000);
+  const tid  = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const r = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10`, {
-      headers: { 'X-Subscription-Token': BRAVE_KEY, Accept: 'application/json' },
+    const r = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TAVILY_KEY}` },
+      body: JSON.stringify({
+        query: q,
+        max_results: 10,
+        search_depth: 'basic',        // 1 credit; "advanced" costs more and adds nothing here
+        include_domains: SOCIAL_HOSTS,
+      }),
       signal: ctrl.signal,
     });
-    if (!r.ok) {
-      let msg = `HTTP ${r.status}`;
-      try { msg = (await r.json())?.error?.detail || msg; } catch {}
-      const e = new Error(`Brave: ${msg}`);
-      e.rateLimited = r.status === 429;
-      throw e;
-    }
-    const j = await r.json();
-    return (j.web?.results || []).map(x => ({ url: x.url, title: x.title || '' }));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw detailedError('Tavily', r.status, j);
+    return (j.results || []).map(x => ({ url: x.url, title: x.title || '' }));
   } finally { clearTimeout(tid); }
 }
 
-async function googleSearch(q) {
+async function serperSearch(q) {
   const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), 9000);
+  const tid  = setTimeout(() => ctrl.abort(), 12000);
   try {
-    const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(CSE_KEY)}&cx=${encodeURIComponent(CSE_CX)}&num=10&q=${encodeURIComponent(q)}`;
-    const r = await fetch(url, { signal: ctrl.signal });
+    // Serper proxies real Google, so Google's site: operators work directly.
+    const r = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: `${q} (${SOCIAL_HOSTS.map(h => `site:${h}`).join(' OR ')})`, num: 10 }),
+      signal: ctrl.signal,
+    });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      // Google's `message` alone rarely distinguishes "API disabled" from "key
-      // restricted" from "wrong project". The reason code and raw message (which
-      // usually names the project number Google thinks the key belongs to) are
-      // what actually identify the problem, so carry them along.
-      const e = j?.error?.errors?.[0] || {};
-      const err = new Error(`Google CSE: ${j?.error?.message || `HTTP ${r.status}`}`);
-      err.details = {
-        http_status: r.status,
-        reason: e.reason || j?.error?.status,
-        domain: e.domain,
-        raw_message: j?.error?.message, // never includes the key; it's in the URL only
-      };
-      throw err;
-    }
-    return (j.items || []).map(x => ({ url: x.link, title: x.title || '' }));
+    if (!r.ok) throw detailedError('Serper', r.status, j);
+    return (j.organic || []).map(x => ({ url: x.link, title: x.title || '' }));
   } finally { clearTimeout(tid); }
 }
 
@@ -124,71 +115,61 @@ export function extractSocials(results, name) {
 /**
  * Creates a searcher for one batch.
  *
- * Spends Brave's free quota first, then falls over to Google Custom Search once
- * this month's Brave count reaches BRAVE_MONTHLY_LIMIT (or if Brave errors /
- * rate-limits). Usage counts are flushed once per batch, not per query.
+ * Spends Tavily's recurring free monthly quota first, then falls over to Serper
+ * (paid, but ~$0.06 per 60-lead scan) once this month's Tavily count reaches
+ * TAVILY_MONTHLY_LIMIT — or immediately if Tavily errors. Usage counts are
+ * flushed once per batch, not per query, and persist in `api_usage` so the
+ * switch survives cold starts.
  */
 export async function createSearcher() {
   const month = monthKey();
-  // Keep this a real number even when Brave isn't configured: an Infinity here
-  // makes the flush arithmetic NaN and Postgres rejects the insert. Whether
-  // Brave is usable is decided by `braveEnabled`, not by a sentinel count.
-  const braveEnabled = !!BRAVE_KEY;
-  let braveCount = braveEnabled ? await getUsage('brave', month) : 0;
-  const startBrave = braveCount;
-  let googleUsed = 0;
-  let lastBraveAt = 0;
+  // Keep this a real number even when Tavily isn't configured: an Infinity here
+  // makes the flush arithmetic NaN and Postgres rejects the insert.
+  const tavilyEnabled = !!TAVILY_KEY;
+  let tavilyCount = tavilyEnabled ? await getUsage('tavily', month) : 0;
+  const startTavily = tavilyCount;
+  let serperUsed = 0;
 
   return {
     status: providerStatus(),
-    get braveUsedThisMonth() { return braveCount; },
+    get tavilyUsedThisMonth() { return tavilyCount; },
 
     /**
-     * Finds a business's social pages.
-     *
-     * The query is provider-aware, because the two engines see different webs:
-     *  - Brave searches everything, so it needs the "facebook instagram" hint to
-     *    surface social pages instead of directories and news.
-     *  - The Google CSE is configured to search ONLY facebook.com + instagram.com
-     *    (see README), so the name and city are enough — adding those hint words
-     *    there would just filter out perfectly good pages whose text happens not
-     *    to contain them.
+     * Finds a business's social pages. Both providers are told to restrict to
+     * facebook.com/instagram.com, so the name and city are the whole query —
+     * no "facebook instagram" hint words needed (they'd only filter out good
+     * pages whose text happens not to contain them).
      */
     async searchSocials(name, city) {
-      const canBrave  = braveEnabled && braveCount < BRAVE_MONTHLY_LIMIT;
-      const canGoogle = !!(CSE_KEY && CSE_CX);
-      const base = `"${name}"${city ? ' ' + city : ''}`;
+      const canTavily = tavilyEnabled && tavilyCount < TAVILY_MONTHLY_LIMIT;
+      const canSerper = !!SERPER_KEY;
+      const q = `"${name}"${city ? ' ' + city : ''}`;
 
-      if (canBrave) {
-        const wait = BRAVE_MIN_INTERVAL_MS - (Date.now() - lastBraveAt);
-        if (wait > 0) await sleep(wait); // free tier: 1 query/sec
-        lastBraveAt = Date.now();
+      if (canTavily) {
         try {
-          const results = await braveSearch(`${base} facebook instagram`);
-          braveCount++;
-          return { results, provider: 'brave' };
+          const results = await tavilySearch(q);
+          tavilyCount++;
+          return { results, provider: 'tavily' };
         } catch (err) {
-          if (!canGoogle) throw err;
-          // Brave failed (quota, rate limit, outage) — fall through to Google.
+          if (!canSerper) throw err;
+          // Tavily failed (quota, outage) — fall through to Serper.
         }
       }
 
-      if (canGoogle) {
-        const results = await googleSearch(base);
-        googleUsed++;
-        return { results, provider: 'google' };
+      if (canSerper) {
+        const results = await serperSearch(q);
+        serperUsed++;
+        return { results, provider: 'serper' };
       }
 
-      throw new Error(
-        'No search provider configured. Set GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID (or BRAVE_SEARCH_API_KEY).',
-      );
+      throw new Error('No search provider configured. Set TAVILY_API_KEY and/or SERPER_API_KEY.');
     },
 
     /** Persist this batch's usage. Call once when the batch finishes. */
     async flush() {
       await Promise.all([
-        bumpUsage('brave', braveCount - startBrave, month),
-        bumpUsage('google', googleUsed, month),
+        bumpUsage('tavily', tavilyCount - startTavily, month),
+        bumpUsage('serper', serperUsed, month),
       ]);
     },
   };

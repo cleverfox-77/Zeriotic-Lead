@@ -1,26 +1,37 @@
 import { requireAuth } from './_lib/auth.js';
 import { sql } from './_lib/db.js';
-import { providerStatus, getUsage, createSearcher, extractSocials, cseKeySource, BRAVE_MONTHLY_LIMIT } from './_lib/search.js';
+import { providerStatus, getUsage, createSearcher, extractSocials, TAVILY_MONTHLY_LIMIT } from './_lib/search.js';
 
-// Reports what the server actually resolved from its environment, so a
-// misnamed variable shows up as "not configured" instead of a confusing
-// runtime failure. Never returns secret values — only whether they are set.
+// Placeholders people paste in by mistake. The command from the README is the
+// big one — pasting it instead of running it leaves the signing key set to a
+// string that is published in this repo's .env.example.
+const PLACEHOLDER_SECRET = /node -e|randomBytes|changeme|change-me|dev-only|your-secret|placeholder|example/i;
+
+function secretQuality(value) {
+  if (!value) return { ok: false, why: 'not set' };
+  if (PLACEHOLDER_SECRET.test(value)) {
+    return { ok: false, why: 'looks like a placeholder or the generator command pasted instead of run — anyone reading the public repo could guess it and forge logins' };
+  }
+  if (value.length < 32) return { ok: false, why: `only ${value.length} characters — short enough to brute-force; use 64 hex chars` };
+  return { ok: true };
+}
+
+// Reports what the server actually resolved from its environment, so a misnamed
+// or mis-pasted variable shows up plainly instead of as a confusing runtime
+// failure. Never returns secret values — only whether they look sane.
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   const session = requireAuth(req, res);
   if (!session) return;
 
   const providers = providerStatus();
-  const [brave, google] = await Promise.all([getUsage('brave'), getUsage('google')]);
+  const [tavily, serper] = await Promise.all([getUsage('tavily'), getUsage('serper')]);
 
   let db = false;
   try { await sql`select 1`; db = true; } catch {}
 
   // ?test=Some Business Name — runs ONE real search so you can confirm the
-  // search engine is actually configured to return Facebook/Instagram pages.
-  // Costs one query against your quota. Returns raw URLs so a misconfigured CSE
-  // (e.g. no sites added) shows up as an empty result rather than a silent
-  // "no socials found" on every lead.
+  // provider is actually returning Facebook/Instagram pages. Costs one query.
   let test;
   if (req.query?.test) {
     const name = String(req.query.test).slice(0, 100);
@@ -35,40 +46,18 @@ export default async function handler(req, res) {
         raw_urls: results.slice(0, 10).map(r => r.url),
         extracted: extractSocials(results, name),
         hint: results.length === 0
-          ? 'Zero results. If using Google CSE, add facebook.com and instagram.com under "Sites to search".'
+          ? 'The provider answered but found nothing for this business. Try one you know has a Facebook page.'
           : undefined,
       };
     } catch (err) {
-      // Map Google's reason code (more reliable than its prose) to the real fix.
       const d = err.details || {};
       let fix;
-      switch (d.reason) {
-        case 'accessNotConfigured':
-          fix = 'The Custom Search API is not enabled on the project that owns THIS key. Note the project '
-              + 'number in the raw message below — if it is not the project where you enabled the API, the '
-              + 'key belongs to a different project. Create the key in the same project, or enable the API on that one.';
-          break;
-        case 'forbidden':
-        case 'PERMISSION_DENIED':
-          fix = 'The key reached the API but was refused. Usually the key\'s API restrictions do not include '
-              + 'Custom Search API (Credentials → your key → API restrictions), or the change has not propagated '
-              + 'yet — Google says up to 5 minutes.';
-          break;
-        case 'keyInvalid':
-        case 'badRequest':
-          fix = 'The key or the search engine ID is not accepted. Check GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID in Vercel '
-              + '(no quotes, no trailing spaces), then redeploy.';
-          break;
-        case 'dailyLimitExceeded':
-        case 'rateLimitExceeded':
-          fix = 'Out of Custom Search quota (100/day free). Wait for the daily reset or enable billing.';
-          break;
-        default:
-          if (/does not have.*access|has not been used|is disabled|blocked/i.test(err.message)) {
-            fix = 'Enable "Custom Search API" for the project that owns this key, and make sure the key\'s API '
-                + 'restrictions allow it. If both look right, the key likely belongs to a different project than '
-                + 'the one where you enabled the API.';
-          }
+      if (d.http_status === 401 || /unauthor|invalid.*key|api key/i.test(err.message)) {
+        fix = 'The API key was rejected. Check TAVILY_API_KEY / SERPER_API_KEY in Vercel (no quotes, no trailing spaces), then redeploy.';
+      } else if (d.http_status === 429 || /quota|limit|credit/i.test(err.message)) {
+        fix = 'Out of credits for this provider. Tavily resets monthly; Serper needs credits topped up. The app falls over to the other provider automatically when one is exhausted.';
+      } else if (/No search provider configured/.test(err.message)) {
+        fix = 'Set TAVILY_API_KEY (free, 1,000/month) and/or SERPER_API_KEY in Vercel, then redeploy.';
       }
       test = { query_name: name, error: err.message, error_details: d, fix };
     }
@@ -78,25 +67,24 @@ export default async function handler(req, res) {
     ...(test ? { test } : {}),
     database: db,
     google_maps: !!process.env.GOOGLE_MAPS_API_KEY,
+    security: {
+      session_secret: secretQuality(process.env.SESSION_SECRET),
+      cron_secret:    secretQuality(process.env.CRON_SECRET),
+    },
     email: {
       smtp:    !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
       manager: !!process.env.MANAGER_EMAIL,
       cron:    !!process.env.CRON_SECRET,
     },
     search: {
-      brave_configured:  providers.brave,
-      google_configured: providers.google,
-      // Which env var the CSE key actually came from. If this says
-      // GOOGLE_MAPS_API_KEY, no dedicated search key was set and the Maps key is
-      // being reused — it needs Custom Search API enabled *and* allowed by the
-      // key's API restrictions.
-      cse_key_source: cseKeySource(),
-      brave_used_this_month:  brave,
-      brave_limit:            BRAVE_MONTHLY_LIMIT,
-      brave_remaining:        Math.max(0, BRAVE_MONTHLY_LIMIT - brave),
-      google_used_this_month: google,
-      active_provider: providers.brave && brave < BRAVE_MONTHLY_LIMIT ? 'brave'
-                     : providers.google ? 'google' : 'none',
+      tavily_configured: providers.tavily,
+      serper_configured: providers.serper,
+      tavily_used_this_month: tavily,
+      tavily_limit:           TAVILY_MONTHLY_LIMIT,
+      tavily_remaining:       Math.max(0, TAVILY_MONTHLY_LIMIT - tavily),
+      serper_used_this_month: serper,
+      active_provider: providers.tavily && tavily < TAVILY_MONTHLY_LIMIT ? 'tavily'
+                     : providers.serper ? 'serper' : 'none',
     },
   });
 }
