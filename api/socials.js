@@ -21,9 +21,12 @@ export default async function handler(req, res) {
     if (!leads.length) return res.status(200).json({ results: [] });
 
     const searcher = await createSearcher();
-    if (!searcher.status.brave && !searcher.status.google) {
+    // Read the provider flags off `status` rather than naming them here, so a
+    // provider rename can't silently turn this into `!undefined && !undefined`
+    // and reject every request.
+    if (!Object.values(searcher.status).some(Boolean)) {
       return res.status(500).json({
-        error: 'No search provider configured. Set BRAVE_SEARCH_API_KEY, or GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID.',
+        error: 'No search provider configured. Set TAVILY_API_KEY and/or SERPER_API_KEY, then redeploy.',
       });
     }
 
@@ -50,7 +53,7 @@ export default async function handler(req, res) {
 
     await searcher.flush();
 
-    return res.status(200).json({ results, braveUsedThisMonth: searcher.braveUsedThisMonth });
+    return res.status(200).json({ results, tavilyUsedThisMonth: searcher.tavilyUsedThisMonth });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

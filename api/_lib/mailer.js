@@ -14,6 +14,16 @@ export function getTransport() {
     .filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) throw new Error(`Email is not configured on the server — missing: ${missing.join(', ')}`);
 
+  // An email address in SMTP_HOST surfaces as a cryptic DNS failure
+  // ("getaddrinfo EBUSY you@gmail.com") because nodemailer tries to resolve it
+  // as a mail server. Say what's actually wrong instead.
+  if (SMTP_HOST.includes('@')) {
+    throw new Error(
+      `SMTP_HOST is set to "${SMTP_HOST}", which is an email address, not a mail server. ` +
+      `Use SMTP_HOST=smtp.gmail.com (port 465) and put the address in SMTP_USER instead.`,
+    );
+  }
+
   const port = Number(SMTP_PORT) || 465;
   return nodemailer.createTransport({
     host: SMTP_HOST,
