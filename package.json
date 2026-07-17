@@ -1,25 +1,22 @@
 {
   "name": "lead-agent",
-  "version": "1.0.0",
-  "description": "Finds local businesses with no website and delivers them to your team as deduplicated leads.",
+  "version": "2.0.0",
+  "description": "Finds local businesses with no website, delivers them as deduplicated leads, and cold-calls them with a trained AI voice agent.",
   "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "migrate": "node scripts/migrate.mjs"
   },
   "license": "ISC",
   "type": "module",
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "next": "^15.5.0",
     "nodemailer": "^9.0.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.7.0",
-    "vite": "^5.4.21"
   }
 }

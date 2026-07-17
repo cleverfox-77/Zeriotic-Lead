@@ -1,0 +1,23 @@
+html, body {
+  margin: 0;
+  background: #ffffff;
+  -webkit-text-size-adjust: 100%; /* stop iOS inflating text in landscape */
+  overflow-x: hidden;             /* nothing should scroll the page sideways */
+}
+* { box-sizing: border-box; }
+
+/* Kills the double-tap-to-zoom delay and gesture on every control. */
+button, a, input, select, textarea, label { touch-action: manipulation; }
+
+/* iOS zooms the viewport when you focus a field smaller than 16px. The UI
+   is designed at 13px, so bump fields to 16px on small screens only —
+   this is the fix for the auto-zoom, not the viewport meta. */
+@media (max-width: 760px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Wide tables scroll inside their own container, never the page. */
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Tap targets: phone numbers are the point of this app on mobile. */
+a[href^="tel:"] { text-decoration: none; }
