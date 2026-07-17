@@ -5,12 +5,16 @@ import { useIsMobile } from './useIsMobile.js';
 import Login from './Login.jsx';
 import ScanView from './ScanView.jsx';
 import LeadsView from './LeadsView.jsx';
+import CallsView from './CallsView.jsx';
+import TrainView from './TrainView.jsx';
 import ReportView from './ReportView.jsx';
 import HealthView from './HealthView.jsx';
 
 const TABS = [
   { id: 'scan',   label: 'Find leads' },
   { id: 'leads',  label: 'Pipeline' },
+  { id: 'calls',  label: 'AI Calls' },
+  { id: 'train',  label: 'Train AI' },
   { id: 'report', label: 'Reports' },
   { id: 'health', label: 'Setup' },
 ];
@@ -77,6 +81,8 @@ export default function App() {
 
         {tab === 'scan'   && <ScanView />}
         {tab === 'leads'  && <LeadsView />}
+        {tab === 'calls'  && <CallsView />}
+        {tab === 'train'  && <TrainView />}
         {tab === 'report' && <ReportView />}
         {tab === 'health' && <HealthView />}
       </div>

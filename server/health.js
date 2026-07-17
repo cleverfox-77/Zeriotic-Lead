@@ -1,6 +1,9 @@
 import { requireAuth } from './_lib/auth.js';
 import { sql } from './_lib/db.js';
 import { providerStatus, getUsage, createSearcher, extractSocials, TAVILY_MONTHLY_LIMIT } from './_lib/search.js';
+import { vapiStatus, vapiConfigured } from './_lib/vapi.js';
+import { whatsappStatus, whatsappConfigured } from './_lib/whatsapp.js';
+import { usageThisMonth, withinCallingHours } from './calls.js';
 
 // Placeholders people paste in by mistake. The command from the README is the
 // big one — pasting it instead of running it leaves the signing key set to a
@@ -63,8 +66,30 @@ export default async function handler(req, res) {
     }
   }
 
+  // AI-caller readiness. Cheap queries, and only when the tables exist —
+  // a deployment that hasn't run the migration yet must not break Setup.
+  let ai = {
+    vapi: vapiStatus(),
+    vapi_ready: vapiConfigured(),
+    elevenlabs: !!process.env.ELEVENLABS_API_KEY,
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
+    whatsapp: whatsappStatus(),
+    whatsapp_ready: whatsappConfigured(),
+    calling_hours_now: withinCallingHours(),
+  };
+  try {
+    const [usage, [voice]] = await Promise.all([
+      usageThisMonth(),
+      sql`select voice_id from voice_profiles where owner = ${session.name}`,
+    ]);
+    ai = { ...ai, usage, voice_trained: !!voice, migrated: true };
+  } catch {
+    ai = { ...ai, migrated: false };
+  }
+
   return res.status(200).json({
     ...(test ? { test } : {}),
+    ai,
     database: db,
     google_maps: !!process.env.GOOGLE_MAPS_API_KEY,
     security: {

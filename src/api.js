@@ -43,4 +43,16 @@ export const api = {
   notes:     place_id         => req('/api/notes', { params: { place_id } }),
   addNote:   (place_id, note, status) => req('/api/notes', { method: 'POST', body: { place_id, note, status } }),
   report:    ()               => req('/api/report'),
+
+  // AI caller
+  calls:          params      => req('/api/calls', { params }),
+  startCall:      place_id    => req('/api/calls', { method: 'POST', body: { place_id } }),
+  testCall:       test_number => req('/api/calls', { method: 'POST', body: { test_number } }),
+  voiceGet:       ()          => req('/api/voice'),
+  voiceUpload:    (audio, mime) => req('/api/voice', { method: 'POST', body: { audio, mime } }),
+  voiceDelete:    ()          => req('/api/voice', { method: 'DELETE' }),
+  personas:       ()          => req('/api/persona'),
+  savePersona:    body        => req('/api/persona', { method: 'POST', body }),
+  improvePersona: ()          => req('/api/persona', { method: 'POST', body: { improve: true } }),
+  personaAction:  (id, action) => req('/api/persona', { method: 'PATCH', body: { id, action } }),
 };

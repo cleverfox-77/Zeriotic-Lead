@@ -20,7 +20,19 @@ export default function HealthView() {
   const [city, setCity] = useState('Dhaka');
   const [test, setTest] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [myNumber, setMyNumber] = useState('');
+  const [callMsg, setCallMsg] = useState(null); // { ok, text }
+  const [callBusy, setCallBusy] = useState(false);
   const isMobile = useIsMobile();
+
+  const testCall = async () => {
+    setCallBusy(true); setCallMsg(null);
+    try {
+      await api.testCall(myNumber);
+      setCallMsg({ ok: true, text: 'Your phone should ring within ~15 seconds. Talk to the AI, then check the AI Calls tab for the report.' });
+    } catch (e) { setCallMsg({ ok: false, text: e.message }); }
+    finally { setCallBusy(false); }
+  };
 
   const load = () => api.health().then(setH).catch(e => setErr(e.message));
   useEffect(() => { load(); }, []);
@@ -98,6 +110,52 @@ export default function HealthView() {
           Tavily's free quota resets every month, so it is spent first. Roughly 60 searches per 60-lead scan.
         </div>
         <button onClick={load} style={{ ...btnGhost, marginTop: 10 }}>Refresh</button>
+      </div>
+
+      {/* AI caller */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>AI caller</div>
+        <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>
+          The AI cold-caller (Vapi hosts the calls; ElevenLabs is your cloned voice; WhatsApp sends the portfolio mid-call).
+        </div>
+        {h.ai && (
+          <>
+            <Dot ok={h.ai.vapi.key}>Vapi API key (the call engine)</Dot>
+            <Dot ok={h.ai.vapi.phone_number}>Vapi phone number ID</Dot>
+            <Dot ok={h.ai.vapi.webhook_secret}>Vapi webhook secret</Dot>
+            <Dot ok={h.ai.elevenlabs}>ElevenLabs (voice cloning)</Dot>
+            <Dot ok={h.ai.anthropic}>Anthropic key (self-improvement)</Dot>
+            <Dot ok={h.ai.whatsapp.token && h.ai.whatsapp.phone_number}>WhatsApp Cloud API</Dot>
+            <Dot ok={h.ai.whatsapp.template}>WhatsApp approved template</Dot>
+            <Dot ok={h.ai.whatsapp.portfolio_url}>Portfolio PDF URL</Dot>
+            {h.ai.migrated === false && (
+              <div style={{ marginTop: 8, background: '#fef2f2', border: `1px solid ${C.red}33`, borderRadius: 6, padding: 10, fontSize: 12, color: C.red }}>
+                The AI-call tables don't exist yet — run <code style={{ background: C.line, padding: '1px 4px', borderRadius: 3 }}>npm run migrate</code> once
+                (locally, with DATABASE_URL in .env).
+              </div>
+            )}
+            {h.ai.migrated && h.ai.usage && (
+              <div style={{ fontSize: 12, color: C.sub, marginTop: 10 }}>
+                Budget: <strong style={{ color: C.text }}>${h.ai.usage.spent.toFixed(2)}</strong> of ${h.ai.usage.budget} this month
+                · {h.ai.usage.today}/{h.ai.usage.daily_max} calls today
+                · {h.ai.calling_hours_now ? 'within calling hours now' : 'outside calling hours (10:00–19:00 Dhaka, closed Friday)'}
+              </div>
+            )}
+
+            {h.ai.vapi_ready && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+                <label style={label}>Test call — the AI rings YOUR phone (works any hour, still counts against budget)</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input style={input} value={myNumber} onChange={e => setMyNumber(e.target.value)} placeholder="01712-345678" />
+                  <button onClick={testCall} disabled={callBusy || !myNumber.trim()} style={btn(callBusy || !myNumber.trim())}>
+                    {callBusy ? 'Dialing…' : 'Call me'}
+                  </button>
+                </div>
+                {callMsg && <div style={{ marginTop: 8, fontSize: 12, color: callMsg.ok ? C.green : C.red }}>{callMsg.text}</div>}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Live test */}

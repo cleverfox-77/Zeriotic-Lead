@@ -52,7 +52,7 @@ export async function buildReport() {
   };
 }
 
-const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+export const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 
 /** Plain, table-based HTML — the markup email clients actually render reliably. */
 export function renderReportHtml(d, { title = 'Lead Agent Report', period = '' } = {}) {

@@ -9,6 +9,18 @@ function NotePanel({ lead, onChanged, isMobile }) {
   const [text, setText]   = useState('');
   const [status, setStatus] = useState(lead.status);
   const [busy, setBusy]   = useState(false);
+  const [ai, setAi]       = useState(null); // { busy } | { ok, text } | { err }
+
+  const aiCall = async () => {
+    if (!confirm(`Have the AI call ${lead.name} now?\n\nIt pitches with your trained voice and script, then files a report here. Costs roughly $0.50.`)) return;
+    setAi({ busy: true });
+    try {
+      await api.startCall(lead.place_id);
+      setAi({ ok: true, text: 'Ringing — follow it live in the AI Calls tab. The report lands here when the call ends.' });
+    } catch (e) {
+      setAi({ err: e.message });
+    }
+  };
 
   useEffect(() => { api.notes(lead.place_id).then(d => setNotes(d.notes)).catch(() => {}); }, [lead.place_id]);
 
@@ -37,6 +49,20 @@ function NotePanel({ lead, onChanged, isMobile }) {
         <button onClick={save} disabled={busy} style={{ ...btn(busy), width: isMobile ? '100%' : undefined, padding: isMobile ? '12px 16px' : undefined }}>
           {busy ? 'Saving…' : 'Save'}
         </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+        {lead.do_not_call ? (
+          <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>⛔ Asked not to be called — AI calling disabled for this lead.</span>
+        ) : (
+          <button onClick={aiCall} disabled={ai?.busy || !lead.phone}
+            title={lead.phone ? '' : 'No phone number on this lead'}
+            style={{ ...btnGhost, opacity: lead.phone ? 1 : 0.5, width: isMobile ? '100%' : undefined }}>
+            {ai?.busy ? 'Starting call…' : '🤖 AI Call'}
+          </button>
+        )}
+        {ai?.ok  && <span style={{ fontSize: 12, color: C.green }}>{ai.text}</span>}
+        {ai?.err && <span style={{ fontSize: 12, color: C.red }}>{ai.err}</span>}
       </div>
 
       <div style={{ marginTop: 12 }}>
